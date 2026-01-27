@@ -12,12 +12,14 @@
         </router-link>
         <div class="spacer"></div>
         <nav class="nav-actions">
-          <div class="user-avatar">
+          <div class="user-avatar" @click="toggleProfile">
             <span>M</span>
           </div>
         </nav>
       </div>
     </header>
+
+    <UserProfileCard v-if="isProfileOpen" />
 
     <main class="page-container">
       <router-view />
@@ -26,9 +28,10 @@
 </template>
 
 <script>
-import { defineComponent, computed } from 'vue'
+import { defineComponent, computed, ref } from 'vue'
 import { useRoute } from 'vue-router'
 import LessonSidebar from 'components/LessonSidebar.vue'
+import UserProfileCard from 'components/UserProfileCard.vue'
 import { storeToRefs } from 'pinia'
 import { useLessonStore } from '../stores/store'
 
@@ -36,17 +39,25 @@ export default defineComponent({
   name: 'MainLayout',
   components: {
     LessonSidebar,
+    UserProfileCard,
   },
   setup() {
     const lessonStore = useLessonStore()
     const { isSidebarOpen } = storeToRefs(lessonStore)
     const route = useRoute()
+    const isProfileOpen = ref(false)
 
     const isHomePage = computed(() => route.path === '/')
+
+    const toggleProfile = () => {
+      isProfileOpen.value = !isProfileOpen.value
+    }
 
     return {
       isSidebarOpen,
       isHomePage,
+      isProfileOpen,
+      toggleProfile,
     }
   },
 })

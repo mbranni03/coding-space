@@ -1,5 +1,7 @@
 <template>
   <div class="layout">
+    <LessonSidebar :is-open="isSidebarOpen" @close="isSidebarOpen = false" />
+
     <header class="header">
       <div class="header-content">
         <a href="/" class="logo-area">
@@ -25,11 +27,19 @@
 
 <script>
 import { defineComponent } from 'vue'
+import LessonSidebar from 'components/LessonSidebar.vue'
+import { useLessons } from '../composables/useLessons'
 
 export default defineComponent({
   name: 'MainLayout',
+  components: {
+    LessonSidebar,
+  },
   setup() {
-    return {}
+    const { isSidebarOpen } = useLessons()
+    return {
+      isSidebarOpen,
+    }
   },
 })
 </script>

@@ -2,25 +2,27 @@
   <div class="split-layout">
     <!-- Left Pane: Instructions -->
     <div class="pane left-pane">
-      <ProgressTracker
-        :current="currentStep"
-        :total="totalSteps"
-        :moduleName="moduleName"
-        class="mb-md"
-      />
+      <div class="pane-header">
+        <div class="header-top-row">
+          <div class="module-info">
+            <span class="module-overline">Module: {{ moduleName }}</span>
+            <span class="step-indicator">Part {{ currentStep }} of {{ totalSteps }}</span>
+          </div>
+          <button
+            class="btn-map-toggle"
+            @click="isSidebarOpen = !isSidebarOpen"
+            :class="{ 'is-active': isSidebarOpen }"
+            title="Toggle Learning Path"
+          >
+            <span class="material-icons">map</span>
+            <span class="btn-label">Path</span>
+          </button>
+        </div>
+
+        <ProgressTracker :current="currentStep" :total="totalSteps" />
+      </div>
 
       <div v-html="renderedMarkdown" class="markdown-body col-grow"></div>
-
-      <div class="navigation-footer">
-        <button class="btn btn-flat">
-          <span class="material-icons btn-icon">arrow_back</span>
-          Back
-        </button>
-        <button class="btn btn-outline">
-          Next Lesson
-          <span class="material-icons btn-icon right">arrow_forward</span>
-        </button>
-      </div>
     </div>
 
     <!-- Right Pane: Code Editor & Console -->
@@ -31,16 +33,28 @@
           <span class="material-icons file-icon">description</span>
           <span class="file-name">src/main.rs</span>
         </div>
-        <button
-          class="btn btn-run"
-          :class="{ 'is-loading': isRunning }"
-          @click="runCode"
-          :disabled="isRunning"
-        >
-          <span v-if="isRunning" class="spinner"></span>
-          <span v-else class="material-icons btn-icon">play_arrow</span>
-          {{ isRunning ? 'Running...' : 'Run Code' }}
-        </button>
+        <div class="editor-actions">
+          <button
+            class="btn btn-run"
+            :class="{ 'is-loading': isRunning }"
+            @click="runCode"
+            :disabled="isRunning"
+          >
+            <span v-if="isRunning" class="spinner"></span>
+            <span v-else class="material-icons btn-icon">play_arrow</span>
+            {{ isRunning ? 'Running...' : 'Run Code' }}
+          </button>
+          <button
+            class="btn btn-submit"
+            :class="{ 'is-loading': isSubmitting }"
+            @click="submitWork"
+            :disabled="isRunning || isSubmitting"
+          >
+            <span v-if="isSubmitting" class="spinner"></span>
+            <span v-else class="material-icons btn-icon">check</span>
+            {{ isSubmitting ? 'Submitting...' : 'Submit' }}
+          </button>
+        </div>
       </div>
 
       <!-- Editor Area -->
@@ -73,7 +87,7 @@
 </template>
 
 <script>
-import { defineComponent, onMounted, ref, computed } from 'vue'
+import { defineComponent, onMounted, ref, computed, watch } from 'vue'
 import MarkdownIt from 'markdown-it'
 import { EditorState } from '@codemirror/state'
 import {
@@ -99,7 +113,11 @@ import {
   closeBracketsKeymap,
 } from '@codemirror/autocomplete'
 import { lintKeymap } from '@codemirror/lint'
+import { oneDark } from '@codemirror/theme-one-dark'
 import ProgressTracker from 'components/ProgressTracker.vue'
+import { useLessons } from '../composables/useLessons'
+import hljs from 'highlight.js'
+import 'highlight.js/styles/atom-one-dark.css'
 
 export default defineComponent({
   name: 'IndexPage',
@@ -108,40 +126,48 @@ export default defineComponent({
   },
   setup() {
     const editorRef = ref(null)
-    const md = new MarkdownIt()
+    const { currentLesson, currentLessonIndex, lessons, nextLesson, prevLesson, isSidebarOpen } =
+      useLessons()
 
     // State
     const isRunning = ref(false)
+    const isSubmitting = ref(false)
     const showOutput = ref(true)
     const output = ref('')
     const consoleExpanded = ref(false)
-    const currentStep = ref(1)
-    const totalSteps = ref(8)
+
+    // Computed props map to store
+    const currentStep = computed(() => currentLessonIndex.value + 1)
+    const totalSteps = computed(() => lessons.value.length)
     const moduleName = ref('Rust Fundamentals')
 
-    const instructions = `
-# Rust Basics: Variables
+    const md = new MarkdownIt({
+      html: true,
+      linkify: true,
+      highlight: function (str, lang) {
+        if (lang && hljs.getLanguage(lang)) {
+          try {
+            return (
+              '<pre class="hljs"><code>' +
+              hljs.highlight(str, { language: lang, ignoreIllegals: true }).value +
+              '</code></pre>'
+            )
+          } catch (err) {
+            console.error('Highlight.js error:', err)
+          }
+        }
 
-In Rust, variables are **immutable** by default. This is one of the many nudges Rust gives you to write code that takes advantage of the safety and easy concurrency that Rust offers.
+        return '<pre class="hljs"><code>' + md.utils.escapeHtml(str) + '</code></pre>'
+      },
+    })
 
-### The Task
-1. Declare a mutable variable named \`counter\`.
-2. Set it to \`0\`.
-3. Increment it by \`1\`.
-4. Print the result.
+    const renderedMarkdown = computed(() => md.render(currentLesson.value.content || ''))
 
-\`\`\`rust
-fn main() {
-    // Your code here
-}
-\`\`\`
-
-### Hints
-- Use the \`mut\` keyword to make a variable mutable.
-- Remember to use semi-colons \`;\` at the end of statements.
-    `
-
-    const renderedMarkdown = computed(() => md.render(instructions))
+    // Watch for lesson changes to reset output/state if needed
+    watch(currentLesson, () => {
+      output.value = ''
+      showOutput.value = true
+    })
 
     // Mock Run Function
     const runCode = () => {
@@ -153,6 +179,22 @@ fn main() {
       setTimeout(() => {
         isRunning.value = false
         output.value = `> Compiling playground v0.0.1 (/playground)\n> Finished dev [unoptimized + debuginfo] target(s) in 0.45s\n> Running \`target/debug/playground\`\n\nHello, world!\nCounter is: 1`
+      }, 1000)
+    }
+
+    const submitWork = () => {
+      isSubmitting.value = true
+      showOutput.value = true
+      output.value = ''
+
+      setTimeout(() => {
+        isSubmitting.value = false
+        output.value = `> Running tests...\n> test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out\n\n> Submission successful!`
+
+        // Advance to next lesson after a brief delay if successful
+        setTimeout(() => {
+          nextLesson()
+        }, 1500)
       }, 1500)
     }
 
@@ -167,6 +209,7 @@ fn main() {
     println!("Counter is: {}", counter);
 }`,
         extensions: [
+          oneDark,
           lineNumbers(),
           highlightActiveLineGutter(),
           highlightSpecialChars(),
@@ -195,7 +238,7 @@ fn main() {
           rust(),
           EditorView.theme(
             {
-              '&': { height: '100%', fontSize: '14px' },
+              '&': { height: '100%', fontSize: '14px', backgroundColor: '#000000' },
               '.cm-scroller': { overflow: 'auto' },
               '.cm-gutters': { backgroundColor: '#161616', color: '#4a4a4a', border: 'none' },
               '.cm-content': { caretColor: 'white', fontFamily: "'Fira Code', monospace" },
@@ -217,13 +260,20 @@ fn main() {
       editorRef,
       renderedMarkdown,
       isRunning,
+      isSubmitting,
       showOutput,
       output,
       runCode,
+      submitWork,
       consoleExpanded,
       currentStep,
       totalSteps,
       moduleName,
+      nextLesson,
+      prevLesson,
+      isSidebarOpen,
+      isFirst: computed(() => currentLessonIndex.value === 0),
+      isLast: computed(() => currentLessonIndex.value === lessons.value.length - 1),
     }
   },
 })
@@ -270,17 +320,77 @@ fn main() {
   flex-grow: 1;
 }
 
-.mb-md {
-  margin-bottom: 16px;
+/* Pane Header */
+.pane-header {
+  margin-bottom: 24px;
+  background-color: #121212;
+  position: sticky;
+  top: 0;
+  z-index: 10;
+  padding-bottom: 12px;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.05);
 }
 
-/* Navigation Footer */
-.navigation-footer {
+.header-top-row {
   display: flex;
   justify-content: space-between;
-  margin-top: 48px;
-  padding-top: 24px;
-  border-top: 1px solid rgba(51, 51, 51, 0.4);
+  align-items: center;
+  margin-bottom: 12px;
+}
+
+.module-info {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.module-overline {
+  font-size: 0.7rem;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  color: #71717a; /* zinc-500 */
+  font-weight: 600;
+}
+
+.step-indicator {
+  font-family: 'Fira Code', monospace;
+  font-size: 0.85rem;
+  color: #e4e4e7; /* zinc-200 */
+}
+
+.btn-map-toggle {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  background-color: rgba(255, 255, 255, 0.05);
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  color: #a1a1aa;
+  padding: 6px 12px;
+  border-radius: 6px;
+  cursor: pointer;
+  transition: all 0.2s ease;
+  font-size: 0.8rem;
+  font-weight: 500;
+}
+
+.btn-map-toggle:hover {
+  background-color: rgba(255, 255, 255, 0.1);
+  color: #fff;
+  border-color: rgba(255, 255, 255, 0.2);
+}
+
+.btn-map-toggle.is-active {
+  background-color: rgba(59, 130, 246, 0.15);
+  color: #60a5fa;
+  border-color: rgba(59, 130, 246, 0.3);
+}
+
+.btn-map-toggle .material-icons {
+  font-size: 16px;
+}
+
+.mb-md {
+  margin-bottom: 16px;
 }
 
 /* Buttons */
@@ -297,6 +407,12 @@ fn main() {
   transition: background-color 0.2s;
   border: none;
   background: transparent;
+}
+
+.btn:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+  pointer-events: none;
 }
 
 .btn-flat {
@@ -328,6 +444,43 @@ fn main() {
   background-color: #1b5e20;
   cursor: not-allowed;
   opacity: 0.8;
+}
+
+.btn-submit {
+  background-color: rgba(59, 130, 246, 0.1);
+  color: #60a5fa; /* blue-400 */
+  border-radius: 16px;
+  padding: 0 16px;
+  height: 28px;
+  font-size: 0.75rem;
+  font-weight: 500;
+  border: 1px solid rgba(59, 130, 246, 0.2);
+  transition: all 0.2s ease;
+  letter-spacing: 0.02em;
+}
+
+.btn-submit:hover {
+  background-color: rgba(59, 130, 246, 0.2);
+  border-color: rgba(59, 130, 246, 0.5);
+  color: #93c5fd; /* blue-300 */
+}
+
+.btn-submit:active {
+  background-color: rgba(59, 130, 246, 0.15);
+  transform: translateY(0);
+}
+
+.btn-submit:disabled {
+  background-color: transparent;
+  color: #52525b;
+  border-color: #27272a;
+  cursor: not-allowed;
+}
+
+.editor-actions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
 }
 
 .btn-icon {
@@ -528,5 +681,11 @@ fn main() {
   padding: 0;
   color: #e6edf3;
   font-size: 0.9rem;
+}
+
+/* Syntax Highlighting Theme Overrides */
+.markdown-body :deep(.hljs) {
+  background: transparent; /* Use container background */
+  padding: 0; /* Let pre handle padding */
 }
 </style>

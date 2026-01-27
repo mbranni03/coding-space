@@ -1,9 +1,5 @@
 <template>
   <div class="tracker-container">
-    <div class="tracker-header">
-      <span class="module-name">{{ moduleName }}</span>
-      <span class="step-count">{{ current }} / {{ total }}</span>
-    </div>
     <div class="progress-bar-track">
       <div class="progress-bar-fill" :style="{ width: progress * 100 + '%' }"></div>
     </div>
@@ -44,8 +40,8 @@ export default defineComponent({
 
 <style scoped>
 .tracker-container {
-  padding-bottom: 16px;
   width: 100%;
+  margin-top: 8px;
 }
 
 .tracker-header {

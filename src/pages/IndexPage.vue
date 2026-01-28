@@ -107,14 +107,29 @@ export default defineComponent({
     const store = useLessonStore()
     const { userProfile } = toRefs(store)
 
-    const selectLanguage = (lang) => {
+    const selectLanguage = async (lang) => {
       if (lang.disabled) return
 
-      // Logic to eventually filter lessons by language could go here
-      // For now, we just navigate to the generic lesson page
-      // In a real app, we might route to /learn/rust or /learn/python
-      console.log('Selected language:', lang.id)
-      router.push('/learn')
+      try {
+        // Ensure we load lessons for the selected language
+        // This ensures we can find the latest one to navigate to
+        if (store.currentLanguage !== lang.id || store.generatedLessons.length === 0) {
+          await store.loadLessonsForLanguage(lang.id)
+        }
+
+        const lessons = store.generatedLessons
+        if (lessons && lessons.length > 0) {
+          // Navigate to the latest (last) lesson
+          const latestLesson = lessons[lessons.length - 1]
+          router.push({ name: 'learn', params: { lessonId: latestLesson.lessonId } })
+        } else {
+          // Fallback if no lessons found
+          router.push('/learn')
+        }
+      } catch (e) {
+        console.error('Failed to navigate to latest lesson:', e)
+        router.push('/learn')
+      }
     }
 
     return {

@@ -2,15 +2,24 @@
   <div class="ai-assistant-container">
     <!-- Chat Panel -->
     <Transition name="slide-up">
-      <div v-if="isOpen" class="assistant-panel">
+      <div v-if="isOpen" class="assistant-panel" :class="{ 'is-wide': isWide }">
         <div class="panel-header">
           <div class="header-content">
             <span class="assistant-name">AI Mentor</span>
             <span class="assistant-status">Online</span>
           </div>
-          <button class="btn-minimize" @click="toggleChat">
-            <span class="material-icons">close</span>
-          </button>
+          <div class="panel-header-actions">
+            <button
+              class="btn-header-action"
+              @click="isWide = !isWide"
+              :title="isWide ? 'Shrink' : 'Expand'"
+            >
+              <span class="material-icons">{{ isWide ? 'close_fullscreen' : 'open_in_full' }}</span>
+            </button>
+            <button class="btn-minimize" @click="toggleChat">
+              <span class="material-icons">close</span>
+            </button>
+          </div>
         </div>
 
         <div class="messages-container" ref="messagesRef">
@@ -20,9 +29,11 @@
             class="message-wrapper"
             :class="msg.role"
           >
-            <div class="message-content">
-              {{ msg.text }}
-            </div>
+            <div
+              class="message-content"
+              :class="{ 'markdown-body': msg.role === 'assistant' }"
+              v-html="renderMarkdown(msg.text)"
+            ></div>
           </div>
           <div v-if="isTyping" class="message-wrapper assistant">
             <div class="message-content typing">
@@ -51,7 +62,6 @@
     <Transition name="fade">
       <button v-if="!isOpen" class="assistant-toggle" @click="toggleChat" title="Ask AI Assistant">
         <span class="material-icons">auto_awesome</span>
-        <span v-if="hasNotification" class="notification-dot"></span>
       </button>
     </Transition>
   </div>
@@ -59,11 +69,18 @@
 
 <script>
 import { defineComponent, ref, nextTick } from 'vue'
+import { useLessonStore } from '../stores/store'
+import { askQuestion } from '../services/LearningAPI'
+import MarkdownIt from 'markdown-it'
+import hljs from 'highlight.js'
+import 'highlight.js/styles/atom-one-dark.css'
 
 export default defineComponent({
   name: 'AIAssistant',
   setup() {
+    const store = useLessonStore()
     const isOpen = ref(false)
+    const isWide = ref(true)
     const hasNotification = ref(true)
     const userInput = ref('')
     const isTyping = ref(false)
@@ -74,6 +91,31 @@ export default defineComponent({
         text: "Hi! I'm your AI Mentor. Stuck on the lesson? Ask me anything about Rust.",
       },
     ])
+
+    // Markdown Configuration
+    const md = new MarkdownIt({
+      html: true,
+      linkify: true,
+      highlight: function (str, lang) {
+        if (lang && hljs.getLanguage(lang)) {
+          try {
+            return (
+              '<pre class="hljs"><code>' +
+              hljs.highlight(str, { language: lang, ignoreIllegals: true }).value +
+              '</code></pre>'
+            )
+          } catch (err) {
+            console.error('Highlight.js error:', err)
+          }
+        }
+        return '<pre class="hljs"><code>' + md.utils.escapeHtml(str) + '</code></pre>'
+      },
+    })
+
+    const renderMarkdown = (text) => {
+      if (!text) return ''
+      return md.render(text)
+    }
 
     const toggleChat = () => {
       isOpen.value = !isOpen.value
@@ -90,7 +132,7 @@ export default defineComponent({
       }
     }
 
-    const sendMessage = () => {
+    const sendMessage = async () => {
       if (!userInput.value.trim()) return
 
       const text = userInput.value
@@ -98,31 +140,38 @@ export default defineComponent({
       userInput.value = ''
       scrollToBottom()
 
-      // Mock AI response
       isTyping.value = true
-      setTimeout(() => {
-        isTyping.value = false
+
+      try {
+        const payload = {
+          userId: store.userId,
+          lessonId: store.currentLessonId || 'general',
+          question: text,
+          code: store.editorCode || '',
+          lastOutput: store.compileResult?.stdout || store.compileResult?.stderr || '',
+        }
+
+        const response = await askQuestion(payload)
+
         messages.value.push({
           role: 'assistant',
-          text: getRandomResponse(text),
+          text: response.answer,
         })
+      } catch (error) {
+        messages.value.push({
+          role: 'assistant',
+          text: "I'm having trouble connecting to my brain right now. Please make sure the backend is running.",
+        })
+        console.error('AI Assistant Error:', error)
+      } finally {
+        isTyping.value = false
         scrollToBottom()
-      }, 1500)
-    }
-
-    const getRandomResponse = (query) => {
-      const lowerQuery = query.toLowerCase()
-      if (lowerQuery.includes('mut')) {
-        return "In Rust, variables are immutable by default. To make them mutable, use the 'mut' keyword, like: let mut x = 5;"
       }
-      if (lowerQuery.includes('help')) {
-        return "I'm here to help! You can ask about variables, types, or the specific task in this lesson."
-      }
-      return "That's a great question! In Rust, memory safety is a top priority. Keep exploring the concepts in this lesson to see how it works."
     }
 
     return {
       isOpen,
+      isWide,
       hasNotification,
       userInput,
       isTyping,
@@ -130,6 +179,7 @@ export default defineComponent({
       messagesRef,
       toggleChat,
       sendMessage,
+      renderMarkdown,
     }
   },
 })
@@ -216,6 +266,7 @@ export default defineComponent({
 .assistant-panel {
   width: 350px;
   height: 480px;
+  max-width: calc(100vw - 48px);
   max-height: calc(100vh - 120px);
   background: rgba(18, 18, 18, 0.85); /* Glassmorphism */
   border: 1px solid rgba(255, 255, 255, 0.1);
@@ -228,6 +279,21 @@ export default defineComponent({
   position: absolute;
   bottom: 0;
   right: 0;
+  transition:
+    width 0.4s cubic-bezier(0.16, 1, 0.3, 1),
+    height 0.4s cubic-bezier(0.16, 1, 0.3, 1),
+    transform 0.5s cubic-bezier(0.16, 1, 0.3, 1),
+    opacity 0.3s ease;
+}
+
+.assistant-panel.is-wide {
+  width: 700px;
+  height: 700px;
+  max-height: calc(100vh - 80px);
+}
+
+.assistant-panel.is-wide .message-wrapper.assistant {
+  max-width: 90%;
 }
 
 .panel-header {
@@ -269,20 +335,28 @@ export default defineComponent({
   border-radius: 50%;
 }
 
+.panel-header-actions {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+}
+
+.btn-header-action,
 .btn-minimize {
   background: rgba(255, 255, 255, 0.05);
   border: none;
   color: #a1a1aa;
   cursor: pointer;
-  width: 28px;
-  height: 28px;
-  border-radius: 8px;
+  width: 32px;
+  height: 32px;
+  border-radius: 10px;
   display: flex;
   align-items: center;
   justify-content: center;
   transition: all 0.2s;
 }
 
+.btn-header-action:hover,
 .btn-minimize:hover {
   background: rgba(255, 255, 255, 0.1);
   color: #fff;
@@ -339,6 +413,34 @@ export default defineComponent({
   background: #3b82f6;
   color: #fff;
   border-bottom-right-radius: 4px;
+}
+
+/* Markdown adjustments for chat bubbles */
+.message-content.markdown-body {
+  padding: 12px 16px;
+  background: rgba(39, 39, 42, 0.9);
+}
+
+.message-content.markdown-body :first-child {
+  margin-top: 0;
+}
+
+.message-content.markdown-body :last-child {
+  margin-bottom: 0;
+}
+
+.message-content.markdown-body pre {
+  margin: 12px 0;
+  background: #000;
+  border: 1px solid rgba(255, 255, 255, 0.1);
+}
+
+.message-content.markdown-body code {
+  font-size: 0.8rem;
+}
+
+.message-content.markdown-body p {
+  margin-bottom: 0.75rem;
 }
 
 .input-container {

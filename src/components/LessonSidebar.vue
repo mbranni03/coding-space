@@ -29,19 +29,23 @@
             class="lesson-node"
             :class="{
               'is-completed': lesson.isCompleted,
-              'is-current': lesson.id === currentLessonId,
+              'is-current': lesson.lessonId === currentLessonId,
               'is-locked': lesson.isLocked,
             }"
             @click="selectLesson(lesson)"
           >
             <div class="node-indicator">
-              <span v-if="lesson.isCompleted" class="material-icons check-icon">check</span>
+              <span v-if="lesson.isIntro" class="material-icons info-icon">info</span>
+              <span v-else-if="lesson.isCompleted" class="material-icons check-icon">check</span>
               <span v-else-if="lesson.isLocked" class="material-icons lock-icon">lock</span>
               <div v-else class="current-dot"></div>
             </div>
 
             <div class="node-content">
-              <span class="lesson-index">Part {{ index + 1 }}</span>
+              <span class="lesson-index" v-if="!lesson.isIntro"
+                >Part {{ lesson.lessonNumber || index }}</span
+              >
+              <span class="lesson-index" v-else>Start</span>
               <h3 class="lesson-title">{{ lesson.title }}</h3>
               <p class="lesson-desc">{{ lesson.description }}</p>
             </div>
@@ -62,6 +66,7 @@
 
 <script>
 import { defineComponent, ref } from 'vue'
+import { useRouter } from 'vue-router'
 import { storeToRefs } from 'pinia'
 import { useLessonStore } from '../stores/store'
 import KnowledgeGraphModal from './KnowledgeGraphModal.vue'
@@ -81,13 +86,21 @@ export default defineComponent({
   setup(props, { emit }) {
     const lessonStore = useLessonStore()
     const { lessons, currentLessonId, userId } = storeToRefs(lessonStore)
-    const { setCurrentLesson, loadLesson } = lessonStore
+    const { loadLesson } = lessonStore
 
     const showGraphModal = ref(false)
 
+    const router = useRouter()
+
     const selectLesson = (lesson) => {
       if (!lesson.isLocked) {
-        setCurrentLesson(lesson.id)
+        // Navigate to the lesson route, which will trigger loading via the page watcher
+        router.push({ name: 'learn', params: { lessonId: lesson.lessonId } })
+
+        // On mobile/narrow screens, we might want to close the sidebar
+        if (window.innerWidth < 1024) {
+          emit('close')
+        }
       }
     }
 
@@ -282,6 +295,11 @@ export default defineComponent({
 .lock-icon {
   font-size: 14px;
   color: #52525b;
+}
+
+.info-icon {
+  font-size: 16px;
+  color: #fff;
 }
 
 .current-dot {

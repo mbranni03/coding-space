@@ -6,8 +6,17 @@
       :status-message="isBackendOnline ? 'GENERATING' : 'OFFLINE'"
     />
 
-    <!-- Left Pane: Instructions -->
-    <div class="pane left-pane">
+    <!-- Intro Page Mode -->
+    <IntroPage
+      v-if="currentLesson && currentLesson.isIntro"
+      :title="currentLesson.title"
+      :content="currentLesson.content"
+      @continue="handleNextLesson"
+      @toggle-sidebar="toggleSidebar"
+    />
+
+    <!-- Left Pane: Instructions (Standard Lesson) -->
+    <div class="pane left-pane" v-else>
       <div class="pane-header">
         <div class="header-top-row">
           <div class="module-info">
@@ -48,7 +57,7 @@
     </div>
 
     <!-- Right Pane: Code Editor & Console -->
-    <div class="pane right-pane">
+    <div class="pane right-pane" v-if="!(currentLesson && currentLesson.isIntro)">
       <!-- Editor Toolbar -->
       <div class="editor-header">
         <div class="file-tabs" v-if="currentLesson && currentLesson.files">
@@ -78,10 +87,17 @@
             class="btn btn-submit"
             :class="{ 'is-loading': isSubmitting }"
             @click="submitWork"
-            :disabled="isRunning || isSubmitting || !isBackendOnline"
+            :disabled="isRunning || isSubmitting || !isBackendOnline || !hasCompiledSuccessfully"
+            :title="
+              !hasCompiledSuccessfully
+                ? 'Run your code successfully first'
+                : 'Submit for evaluation'
+            "
           >
             <span v-if="isSubmitting" class="spinner"></span>
-            <span v-else class="material-icons btn-icon">check</span>
+            <span v-else class="material-icons btn-icon">{{
+              hasCompiledSuccessfully ? 'check' : 'lock'
+            }}</span>
             {{ isSubmitting ? 'Submitting...' : 'Submit' }}
           </button>
         </div>
@@ -165,10 +181,7 @@
             <!-- Next Lesson Action -->
             <div v-if="lastSubmission.passed" class="actions-row">
               <button class="btn btn-primary" @click="handleNextLesson">
-                <span v-if="lastSubmission.nextConcept"
-                  >Continue to {{ lastSubmission.nextConcept.label }}</span
-                >
-                <span v-else>Next Lesson</span>
+                <span>Next Lesson</span>
                 <span class="material-icons">arrow_forward</span>
               </button>
             </div>
@@ -203,6 +216,7 @@
 
 <script>
 import { defineComponent, onMounted, ref, computed, watch, shallowRef } from 'vue'
+import { useRoute, useRouter } from 'vue-router'
 import { storeToRefs } from 'pinia'
 import MarkdownIt from 'markdown-it'
 import { EditorState } from '@codemirror/state'
@@ -232,6 +246,7 @@ import { lintKeymap } from '@codemirror/lint'
 import { oneDark } from '@codemirror/theme-one-dark'
 import AIAssistant from 'components/AIAssistant.vue'
 import LoadingOverlay from 'components/LoadingOverlay.vue'
+import IntroPage from 'pages/IntroPage.vue'
 import { useLessonStore } from '../stores/store'
 import hljs from 'highlight.js'
 import 'highlight.js/styles/atom-one-dark.css'
@@ -241,6 +256,7 @@ export default defineComponent({
   components: {
     AIAssistant,
     LoadingOverlay,
+    IntroPage,
   },
   setup() {
     const editorRef = ref(null)
@@ -271,17 +287,49 @@ export default defineComponent({
       compileCode,
       submitCode,
       setEditorCode,
-      setCurrentLesson,
+      loadNextLesson,
     } = lessonStore
 
+    // Handle route params for direct linking
+    const route = useRoute()
+    const router = useRouter()
+
+    // Watch for route changes to load the correct lesson
+    watch(
+      () => route.params.lessonId,
+      async (newId) => {
+        if (newId && newId !== currentLesson.value?.lessonId) {
+          await lessonStore.loadLesson(newId)
+        }
+      },
+    )
+
+    // Handle next lesson navigation (updates URL)
     const handleNextLesson = async () => {
-      if (lastSubmission.value?.nextConcept) {
-        await setCurrentLesson(lastSubmission.value.nextConcept.id)
-      } else {
-        await nextLesson()
+      const currentLessonData = currentLesson.value
+      if (currentLessonData) {
+        if (currentLessonData.isIntro) {
+          lessonStore.markLessonCompleted(currentLessonData.id)
+          await nextLesson()
+        } else {
+          await loadNextLesson(currentLessonData.id)
+        }
+
+        // Update URL to match new lesson
+        if (currentLesson.value?.lessonId) {
+          router.push({ name: 'learn', params: { lessonId: currentLesson.value.lessonId } })
+        }
       }
     }
 
+    // State
+    // activeFileIndex is already defined at top of setup
+    const showOutput = ref(true)
+    const output = ref('')
+    const consoleExpanded = ref(false)
+    const hasCompiledSuccessfully = ref(false)
+
+    // Computed
     const activeFile = computed(() => {
       if (currentLesson.value && currentLesson.value.files) {
         return currentLesson.value.files[activeFileIndex.value] || currentLesson.value.files[0]
@@ -289,14 +337,10 @@ export default defineComponent({
       return null
     })
 
-    // State
     const isRunning = computed(() => isCompiling.value)
-    // isSubmitting now comes from store
-    const showOutput = ref(true)
-    const output = ref('')
-    const consoleExpanded = ref(false)
     const moduleName = computed(() => currentLesson.value?.category || 'Rust Fundamentals')
 
+    // Markdown Configuration
     const md = new MarkdownIt({
       html: true,
       linkify: true,
@@ -312,7 +356,6 @@ export default defineComponent({
             console.error('Highlight.js error:', err)
           }
         }
-
         return '<pre class="hljs"><code>' + md.utils.escapeHtml(str) + '</code></pre>'
       },
     })
@@ -322,11 +365,38 @@ export default defineComponent({
       return md.render(currentLesson.value.content)
     })
 
-    // Watch for lesson changes
+    // Actions
+    const runCode = async () => {
+      showOutput.value = true
+      output.value = '> Compiling...'
+      lessonStore.$patch({ lastSubmission: null })
+      await compileCode()
+    }
+
+    const submitWork = async () => {
+      showOutput.value = true
+      lessonStore.$patch({ lastSubmission: null })
+      try {
+        const code = editorView.value ? editorView.value.state.doc.toString() : editorCode.value
+        output.value = '> Submitting for evaluation...'
+        await submitCode(code)
+        showOutput.value = true
+        consoleExpanded.value = true
+      } catch (error) {
+        output.value = `> Error: ${error.message}`
+      }
+    }
+
+    const retryLoad = () => {
+      initialize()
+    }
+
+    // Watchers
     watch(currentLesson, (newLesson) => {
       output.value = ''
       showOutput.value = true
       consoleExpanded.value = false
+      hasCompiledSuccessfully.value = false
       if (newLesson?.files) {
         const mainIndex = newLesson.files.findIndex((f) => f.name.endsWith('main.rs'))
         activeFileIndex.value = mainIndex >= 0 ? mainIndex : 0
@@ -335,50 +405,37 @@ export default defineComponent({
       }
     })
 
-    // Watch for compile results
     watch(compileResult, (result) => {
       if (result) {
         let outputText = ''
+        const isSuccess = result.success ?? result.exitCode === 0
+        if (isSuccess) hasCompiledSuccessfully.value = true
 
-        // Prioritize runOutput (actual program output) if available
         if (result.runOutput) {
-          if (result.runOutput.stdout) {
-            outputText += result.runOutput.stdout
-          }
+          if (result.runOutput.stdout) outputText += result.runOutput.stdout
           if (result.runOutput.stderr) {
             if (outputText) outputText += '\n'
             outputText += result.runOutput.stderr
           }
-
-          // If runOutput is empty but we have compilation stderr, show it
-          if (!outputText && result.stderr) {
-            outputText = result.stderr
-          }
+          if (!outputText && result.stderr) outputText = result.stderr
         } else {
-          // Standard output handling for non-WASM/simple compiles
-          if (result.stdout) {
-            outputText += result.stdout
-          }
+          if (result.stdout) outputText += result.stdout
           if (result.stderr) {
             if (outputText) outputText += '\n'
             outputText += result.stderr
           }
         }
 
-        // Final fallback if no output at all
         if (!outputText) {
-          const isSuccess = result.success ?? result.exitCode === 0
           outputText = isSuccess
             ? '> Program executed successfully (no output)'
             : `> Execution failed with exit code ${result.exitCode ?? 1}`
         }
-
         output.value = outputText
         showOutput.value = true
       }
     })
 
-    // Watch for submission to auto-expand console
     watch(lastSubmission, (submission) => {
       if (submission) {
         showOutput.value = true
@@ -386,45 +443,6 @@ export default defineComponent({
       }
     })
 
-    // Run code via API
-    const runCode = async () => {
-      showOutput.value = true
-      output.value = '> Compiling...'
-
-      // Reset submission state so we show standard terminal output
-      lessonStore.$patch({ lastSubmission: null })
-
-      await compileCode()
-    }
-
-    // Submit work and update mastery
-    const submitWork = async () => {
-      showOutput.value = true
-      // Reset previous submission to ensure watcher triggers and UI clears
-      lessonStore.$patch({ lastSubmission: null })
-
-      try {
-        const code = editorView.value ? editorView.value.state.doc.toString() : editorCode.value
-
-        // Show loading state in output
-        output.value = '> Submitting for evaluation...'
-
-        await submitCode(code)
-
-        // Force console expansion to show feedback
-        showOutput.value = true
-        consoleExpanded.value = true
-      } catch (error) {
-        output.value = `> Error: ${error.message}`
-      }
-    }
-
-    // Retry loading
-    const retryLoad = () => {
-      initialize()
-    }
-
-    // Sync editor content with store
     watch(activeFile, (newFile) => {
       if (!editorView.value || !newFile) return
       const currentDoc = editorView.value.state.doc.toString()
@@ -435,12 +453,13 @@ export default defineComponent({
       }
     })
 
-    // Initialize on mount
-    onMounted(async () => {
-      // Initialize store (loads lessons from API)
-      await initialize()
-
+    const initEditor = () => {
       if (!editorRef.value) return
+
+      // If we already have a view, destroy it before creating a new one
+      if (editorView.value) {
+        editorView.value.destroy()
+      }
 
       const initialCode = activeFile.value?.code || editorCode.value || ''
 
@@ -503,6 +522,34 @@ export default defineComponent({
         state: startState,
         parent: editorRef.value,
       })
+    }
+
+    // Watch for the editor container to become available (handles v-if transitions)
+    watch(editorRef, (newVal) => {
+      if (newVal) {
+        initEditor()
+      }
+    })
+
+    // Initialize on mount
+    onMounted(async () => {
+      // Initialize store (loads lessons from API)
+      await initialize()
+
+      // If URL has a lesson ID, load that specific lesson
+      // Otherwise, the store's initialize logic (loading last/first lesson) will take over
+      // But we should update the URL to match whatever was loaded if the param was missing
+      if (route.params.lessonId) {
+        await lessonStore.loadLesson(route.params.lessonId)
+      } else if (currentLesson.value?.lessonId) {
+        // If store loaded a default lesson, update URL to match
+        router.replace({ name: 'learn', params: { lessonId: currentLesson.value.lessonId } })
+      }
+
+      // If editorRef is already available on mount, initialize it
+      if (editorRef.value) {
+        initEditor()
+      }
     })
 
     return {
@@ -530,6 +577,7 @@ export default defineComponent({
       isBackendOnline,
       compileResult,
       lastSubmission,
+      hasCompiledSuccessfully,
       isFirst: computed(() => currentLessonIndex.value === 0),
       isLast: computed(() => currentLessonIndex.value === lessons.value.length - 1),
       parsedAnalysis: computed(() => {

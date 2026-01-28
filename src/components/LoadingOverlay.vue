@@ -24,12 +24,17 @@ const props = defineProps({
     type: String,
     default: 'PROCESSING',
   },
+  delay: {
+    type: Number,
+    default: 100, // 100ms delay before showing to prevent flashing
+  },
 })
 
 // const emit = defineEmits(['update:modelValue'])
 
 const canvasRef = ref(null)
-const isVisible = ref(props.modelValue)
+const isVisible = ref(false)
+let timeoutId = null
 
 // Animation state
 let animationFrameId = null
@@ -133,11 +138,28 @@ const animate = () => {
   animationFrameId = requestAnimationFrame(animate)
 }
 
+const updateVisibility = (shouldShow) => {
+  if (timeoutId) clearTimeout(timeoutId)
+
+  if (shouldShow) {
+    if (props.delay > 0) {
+      timeoutId = setTimeout(() => {
+        isVisible.value = true
+      }, props.delay)
+    } else {
+      isVisible.value = true
+    }
+  } else {
+    isVisible.value = false
+  }
+}
+
 watch(
   () => props.modelValue,
   (newVal) => {
-    isVisible.value = newVal
+    updateVisibility(newVal)
   },
+  { immediate: true },
 )
 
 onMounted(() => {
@@ -150,6 +172,7 @@ onMounted(() => {
 onBeforeUnmount(() => {
   window.removeEventListener('resize', resize)
   cancelAnimationFrame(animationFrameId)
+  if (timeoutId) clearTimeout(timeoutId)
 })
 </script>
 

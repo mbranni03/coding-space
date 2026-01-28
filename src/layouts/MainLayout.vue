@@ -26,6 +26,7 @@
     </main>
 
     <LoadingOverlay v-model="showSystemUpdate" />
+    <AIAssistant />
   </div>
 </template>
 
@@ -35,6 +36,7 @@ import { useRoute } from 'vue-router'
 import LessonSidebar from 'components/LessonSidebar.vue'
 import UserProfileCard from 'components/UserProfileCard.vue'
 import LoadingOverlay from 'components/LoadingOverlay.vue'
+import AIAssistant from 'components/AIAssistant.vue'
 import { storeToRefs } from 'pinia'
 import { useLessonStore } from '../stores/store'
 
@@ -44,6 +46,7 @@ export default defineComponent({
     LessonSidebar,
     UserProfileCard,
     LoadingOverlay,
+    AIAssistant,
   },
   setup() {
     const lessonStore = useLessonStore()

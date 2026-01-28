@@ -120,27 +120,20 @@ async function apiRequest(endpoint, options = {}) {
 }
 
 // =====================================================
-// KNOWLEDGE GRAPH ENDPOINTS
+// LESSON NAVIGATION ENDPOINTS
 // =====================================================
 
 /**
- * Get the learning frontier - concepts available to learn
+ * Get the next lesson based on current progress
  * @param {string} userId
- * @returns {Promise<FrontierConcept[]>}
+ * @param {string} [currentLessonId] - Current lesson ID (e.g., "004_rust.basics.functions")
+ * @returns {Promise<{ lesson: GeneratedLesson, cached: boolean }>}
  */
-export async function getFrontier(userId) {
-  return apiRequest(`/frontier/${userId}`)
-}
-
-/**
- * Get the next recommended lesson for a user
- * @param {string} userId
- * @param {string} [category]
- * @returns {Promise<{ lesson: FrontierConcept|null, context: string|null, message?: string }>}
- */
-export async function getNextLesson(userId, category) {
-  const params = category ? `?category=${encodeURIComponent(category)}` : ''
-  return apiRequest(`/next/${userId}${params}`)
+export async function getNextLesson(userId, currentLessonId) {
+  return apiRequest('/lesson/next', {
+    method: 'POST',
+    body: JSON.stringify({ userId, currentLessonId }),
+  })
 }
 
 /**
@@ -163,44 +156,40 @@ export async function getVisualization(userId) {
 }
 
 // =====================================================
-// CONCEPT ENDPOINTS
-// =====================================================
-
-/**
- * Get a specific concept by ID
- * @param {string} conceptId
- * @returns {Promise<Concept>}
- */
-export async function getConcept(conceptId) {
-  return apiRequest(`/concept/${conceptId}`)
-}
-
-/**
- * Get all concepts
- * @returns {Promise<Concept[]>}
- */
-export async function getAllConcepts() {
-  return apiRequest('/concepts')
-}
-
-// =====================================================
 // LESSON ENDPOINTS
 // =====================================================
 
 /**
- * Get or generate a lesson for a concept
- * @param {string} conceptId
- * @param {string} [model]
- * @param {string} [userId]
+ * @typedef {Object} LessonsByLanguageResponse
+ * @property {string} language - The language identifier
+ * @property {number} count - Number of lessons
+ * @property {GeneratedLesson[]} lessons - Array of generated lessons
+ */
+
+/**
+ * Get all generated lessons for a language
+ * @param {string} language - The language to fetch lessons for (e.g., 'rust')
+ * @param {string} [userId] - Optional user ID for completion status
+ * @returns {Promise<GeneratedLesson[]>}
+ */
+export async function getLessonsByLanguage(language, userId) {
+  const params = userId ? `?userId=${encodeURIComponent(userId)}` : ''
+  const response = await apiRequest(`/lessons/${encodeURIComponent(language)}${params}`)
+  return {
+    lessons: response.lessons || [],
+    intro: response.intro || null,
+  }
+}
+
+/**
+ * Get a lesson by its lesson ID
+ * @param {string} lessonId - Lesson ID (e.g., "004_rust.basics.functions")
+ * @param {string} [userId] - Optional user ID for completion status
  * @returns {Promise<{ lesson: GeneratedLesson, cached: boolean }>}
  */
-export async function getLesson(conceptId, model, userId) {
-  const params = new URLSearchParams()
-  if (model) params.append('model', model)
-  if (userId) params.append('userId', userId)
-
-  const queryString = params.toString() ? `?${params.toString()}` : ''
-  return apiRequest(`/lesson/${conceptId}${queryString}`)
+export async function getLessonById(lessonId, userId) {
+  const params = userId ? `?userId=${encodeURIComponent(userId)}` : ''
+  return apiRequest(`/lesson/${encodeURIComponent(lessonId)}${params}`)
 }
 
 /**
@@ -305,6 +294,18 @@ export async function isBackendAvailable() {
   } catch {
     return false
   }
+}
+
+/**
+ * Ask a question to the AI Mentor
+ * @param {{ userId: string, lessonId: string, question: string, code: string, lastOutput?: string }} request
+ * @returns {Promise<{ answer: string }>}
+ */
+export async function askQuestion(request) {
+  return apiRequest('/ask', {
+    method: 'POST',
+    body: JSON.stringify(request),
+  })
 }
 
 export { LearningAPIError }

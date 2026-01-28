@@ -33,9 +33,8 @@ export const useLessonStore = defineStore('lesson', {
     userId: 'default_user',
 
     // Current lesson (API-driven or fallback)
-    currentLessonId: null,
+    currentLessonId: null, // lessonId (e.g., "004_rust.basics.functions")
     currentLessonData: null, // GeneratedLesson from API
-    currentConcept: null, // FrontierConcept from API
 
     // Loading states
     isLoadingLesson: false,
@@ -43,9 +42,13 @@ export const useLessonStore = defineStore('lesson', {
     lessonError: null,
     isBackendOnline: true,
 
-    // Frontier (available lessons)
-    frontier: [],
-    lessons: [], // For backward compatibility with sidebar
+    // Current language being learned
+    currentLanguage: 'rust',
+
+    // Generated lessons by language (course content)
+    // These are lessons that have been generated and are available
+    generatedLessons: [], // Array of GeneratedLesson objects
+    isLoadingLessons: false,
 
     // Progress stats
     progress: null,
@@ -118,10 +121,12 @@ export const useLessonStore = defineStore('lesson', {
       // Transform API lesson to UI-compatible format
       return {
         id: state.currentLessonData.conceptId,
+        lessonId: state.currentLessonData.lessonId,
+        lessonNumber: state.currentLessonData.lessonNumber,
         title: state.currentLessonData.title,
-        description: state.currentConcept?.label || '',
+        description: extractCategoryFromConceptId(state.currentLessonData.conceptId),
         content: state.currentLessonData.markdown,
-        isCompleted: (state.currentConcept?.current_score || 0) >= 0.8,
+        isCompleted: state.currentLessonData.completed === true,
         isLocked: false,
         files: state.currentLessonData.verificationTask?.starterFiles?.map((f) => ({
           name: f.path,
@@ -135,23 +140,30 @@ export const useLessonStore = defineStore('lesson', {
           },
         ],
         verificationTask: state.currentLessonData.verificationTask,
-        complexity: state.currentConcept?.complexity || 1,
-        category: state.currentConcept?.category || 'Basics',
+        isIntro: !!state.currentLessonData.isIntro,
       }
     },
 
     currentLessonIndex(state) {
-      if (!state.currentConcept || state.frontier.length === 0) return 0
-      const idx = state.frontier.findIndex((c) => c.id === state.currentConcept.id)
+      if (!state.currentLessonId || this.lessons.length === 0) return 0
+      const idx = this.lessons.findIndex((l) => l.lessonId === state.currentLessonId)
       return idx >= 0 ? idx : 0
     },
 
     totalSteps(state) {
-      return state.frontier.length || 1
+      // Don't count intro in total steps
+      return state.generatedLessons.filter((l) => !l.isIntro).length || 1
     },
 
     currentStep() {
-      return this.currentLessonIndex + 1
+      const idx = this.currentLessonIndex
+      const current = this.lessons[idx]
+
+      if (current?.isIntro) return 'Intro'
+
+      // If there is an intro, offset the index so the first real lesson is 1
+      const hasIntro = this.lessons.some((l) => l.isIntro)
+      return hasIntro ? idx : idx + 1
     },
 
     isFirstLesson() {
@@ -159,11 +171,37 @@ export const useLessonStore = defineStore('lesson', {
     },
 
     isLastLesson(state) {
-      return this.currentLessonIndex === state.frontier.length - 1
+      return this.currentLessonIndex === state.generatedLessons.length - 1
     },
 
     masteryPercent(state) {
       return state.progress ? Math.round(state.progress.averageMastery * 100) : 0
+    },
+
+    // Lessons array for sidebar display
+    // Transforms generatedLessons into a format compatible with LessonSidebar
+    // Response fields: lessonId, lessonNumber, conceptId, title, markdown, verificationTask, generatedAt, completed
+    lessons(state) {
+      return [...state.generatedLessons]
+        .sort((a, b) => {
+          // Intro always comes first
+          if (a.isIntro) return -1
+          if (b.isIntro) return 1
+          return (a.lessonNumber || 0) - (b.lessonNumber || 0)
+        })
+        .map((lesson) => ({
+          id: lesson.conceptId,
+          lessonId: lesson.lessonId,
+          lessonNumber: lesson.lessonNumber,
+          title: lesson.title,
+          description: lesson.isIntro
+            ? 'Introduction'
+            : extractCategoryFromConceptId(lesson.conceptId),
+          isCompleted: lesson.completed === true,
+          isLocked: false, // All generated lessons are available
+          generatedAt: lesson.generatedAt,
+          isIntro: !!lesson.isIntro,
+        }))
     },
   },
 
@@ -176,11 +214,12 @@ export const useLessonStore = defineStore('lesson', {
       this.isBackendOnline = await LearningAPI.isBackendAvailable()
 
       if (this.isBackendOnline) {
-        await Promise.all([this.loadFrontier(), this.loadProgress()])
+        await Promise.all([this.loadProgress(), this.loadLessonsForLanguage(this.currentLanguage)])
 
-        // Load first available lesson
-        if (this.frontier.length > 0) {
-          await this.loadNextLesson()
+        // Load the last lesson if available and no lesson is currently loaded
+        if (this.generatedLessons.length > 0 && !this.currentLessonId) {
+          const lastLesson = this.generatedLessons[this.generatedLessons.length - 1]
+          await this.loadLesson(lastLesson.lessonId)
         }
       } else {
         this.lessonError = 'Backend server is not running'
@@ -191,36 +230,97 @@ export const useLessonStore = defineStore('lesson', {
     // LESSON LOADING (API-driven)
     // =====================================================
 
-    async loadNextLesson(category) {
+    /**
+     * Load all generated lessons for a language
+     * @param {string} language - The language to fetch lessons for (e.g., 'rust')
+     */
+    async loadLessonsForLanguage(language = 'rust') {
+      this.isLoadingLessons = true
+
+      try {
+        const { lessons, intro } = await LearningAPI.getLessonsByLanguage(language, this.userId)
+
+        const allLessons = [...(lessons || [])]
+
+        // Prepend intro if available
+        if (intro) {
+          intro.conceptId = intro.lessonId // Ensure conceptId exists for compatibility
+          intro.isIntro = true
+          // Check if intro is already in the list to avoid duplicates if backend returns it in both places (unlikely but safe)
+          if (!allLessons.find((l) => l.lessonId === intro.lessonId)) {
+            allLessons.unshift(intro)
+          }
+        }
+
+        this.generatedLessons = allLessons
+        this.currentLanguage = language
+      } catch (error) {
+        console.error('Failed to load lessons for language:', error)
+        // Non-fatal error - continue with empty lessons
+        this.generatedLessons = []
+      } finally {
+        this.isLoadingLessons = false
+      }
+    },
+
+    /**
+     * Add a lesson to the generated lessons list if not already present
+     * Preserves completed status when updating existing lessons
+     * @param {Object} lessonData - The generated lesson data
+     */
+    addGeneratedLesson(lessonData) {
+      if (!lessonData?.conceptId) return
+
+      // Check if lesson already exists
+      const idx = this.generatedLessons.findIndex((l) => l.conceptId === lessonData.conceptId)
+
+      if (idx === -1) {
+        // New lesson - add to list
+        this.generatedLessons.push(lessonData)
+      } else {
+        // Update existing lesson, preserving completed status
+        const existingLesson = this.generatedLessons[idx]
+        this.generatedLessons[idx] = {
+          ...lessonData,
+          // Preserve completed status - only mark complete, never un-complete
+          completed: existingLesson.completed === true || lessonData.completed === true,
+        }
+      }
+    },
+
+    async loadNextLesson(currentLessonId) {
       this.isLoadingLesson = true
       this.isGeneratingLesson = true
       this.lessonError = null
 
       try {
-        const response = await LearningAPI.getNextLesson(this.userId, category)
+        const response = await LearningAPI.getNextLesson(this.userId, currentLessonId)
 
         if (!response.lesson) {
           this.lessonError = response.message || 'No lessons available'
-          this.currentConcept = null
           this.currentLessonData = null
           return
         }
 
-        this.currentConcept = response.lesson
-        this.currentLessonId = response.lesson.id
+        const lessonData = response.lesson
 
-        // Fetch full lesson content
-        const lessonResponse = await LearningAPI.getLesson(response.lesson.id, null, this.userId)
+        // Store both lessonId and conceptId
+        this.currentLessonId = lessonData.lessonId
+        this.currentLessonData = lessonData
 
-        this.currentLessonData = lessonResponse.lesson
+        // Add the new lesson to generated lessons list
+        this.addGeneratedLesson(lessonData)
 
         // Load starter code from verification task or markdown
-        const starterFiles = lessonResponse.lesson.verificationTask?.starterFiles
+        const starterFiles = lessonData.verificationTask?.starterFiles
         if (starterFiles && starterFiles.length > 0) {
           const mainFile = starterFiles.find((f) => f.path.endsWith('main.rs')) || starterFiles[0]
           this.editorCode = mainFile.content
+        } else if (!lessonData.isIntro) {
+          // Only extract code if it's not an intro
+          this.editorCode = extractStarterCode(lessonData.markdown)
         } else {
-          this.editorCode = extractStarterCode(lessonResponse.lesson.markdown)
+          this.editorCode = ''
         }
         this.attempts = 0
         this.compileResult = null
@@ -233,29 +333,55 @@ export const useLessonStore = defineStore('lesson', {
       }
     },
 
-    async loadLesson(conceptId) {
+    async loadLesson(lessonId) {
+      // Check if full lesson is already in memory (has markdown content)
+      const existing = this.generatedLessons.find((l) => l.lessonId === lessonId)
+      const hasFullContent = existing?.markdown && existing.markdown.length > 0
+
+      if (existing && hasFullContent) {
+        this.currentLessonId = existing.lessonId
+        this.currentLessonData = existing
+
+        // Load starter code from verification task or markdown
+        const starterFiles = existing.verificationTask?.starterFiles
+        if (starterFiles && starterFiles.length > 0) {
+          const mainFile = starterFiles.find((f) => f.path.endsWith('main.rs')) || starterFiles[0]
+          this.editorCode = mainFile.content
+        } else if (!existing.isIntro) {
+          this.editorCode = extractStarterCode(existing.markdown)
+        } else {
+          this.editorCode = ''
+        }
+        this.attempts = 0
+        this.compileResult = null
+        this.lastSubmission = null
+        return
+      }
+
+      // Fetch full content from API (cached data is minimal)
       this.isLoadingLesson = true
       this.isGeneratingLesson = true
       this.lessonError = null
 
       try {
-        // Get concept details
-        const concept = await LearningAPI.getConcept(conceptId)
+        const lessonResponse = await LearningAPI.getLessonById(lessonId, this.userId)
 
-        // Get/generate lesson
-        const lessonResponse = await LearningAPI.getLesson(conceptId, null, this.userId)
+        const lessonData = lessonResponse.lesson
+        this.currentLessonId = lessonData.lessonId
+        this.currentLessonData = lessonData
 
-        this.currentConcept = { ...concept, current_score: 0 }
-        this.currentLessonId = conceptId
-        this.currentLessonData = lessonResponse.lesson
+        // Update generated lessons list with full content
+        this.addGeneratedLesson(lessonData)
 
         // Load starter code from verification task or markdown
-        const starterFiles = lessonResponse.lesson.verificationTask?.starterFiles
+        const starterFiles = lessonData.verificationTask?.starterFiles
         if (starterFiles && starterFiles.length > 0) {
           const mainFile = starterFiles.find((f) => f.path.endsWith('main.rs')) || starterFiles[0]
           this.editorCode = mainFile.content
+        } else if (!lessonData.isIntro) {
+          this.editorCode = extractStarterCode(lessonData.markdown)
         } else {
-          this.editorCode = extractStarterCode(lessonResponse.lesson.markdown)
+          this.editorCode = ''
         }
         this.attempts = 0
         this.compileResult = null
@@ -269,25 +395,8 @@ export const useLessonStore = defineStore('lesson', {
     },
 
     // =====================================================
-    // FRONTIER & PROGRESS
+    // PROGRESS
     // =====================================================
-
-    async loadFrontier() {
-      try {
-        this.frontier = await LearningAPI.getFrontier(this.userId)
-
-        // Also populate lessons array for sidebar compatibility
-        this.lessons = this.frontier.map((concept) => ({
-          id: concept.id,
-          title: concept.label,
-          description: concept.category || '',
-          isCompleted: concept.current_score >= 0.8,
-          isLocked: false,
-        }))
-      } catch (error) {
-        console.error('Failed to load frontier:', error)
-      }
-    },
 
     async loadProgress() {
       try {
@@ -336,25 +445,25 @@ export const useLessonStore = defineStore('lesson', {
     // =====================================================
 
     async submitLesson(success, errorCode) {
-      if (!this.currentConcept) {
-        throw new Error('No current concept')
+      if (!this.currentLessonData?.conceptId) {
+        throw new Error('No current lesson')
       }
 
       try {
         const result = await LearningAPI.updateMastery({
           userId: this.userId,
-          conceptId: this.currentConcept.id,
+          conceptId: this.currentLessonData.conceptId,
           success,
           attempts: this.attempts,
           errorCode,
         })
 
-        // Refresh data
-        await Promise.all([this.loadProgress(), this.loadFrontier()])
+        // Refresh progress
+        await this.loadProgress()
 
         // Auto-advance if mastered
         if (result.mastered) {
-          await this.loadNextLesson()
+          await this.loadNextLesson(this.currentLessonId)
         }
 
         return result
@@ -365,13 +474,13 @@ export const useLessonStore = defineStore('lesson', {
     },
 
     async submitCode(code) {
-      if (!this.currentConcept) return
+      if (!this.currentLessonData?.conceptId) return
 
       this.isSubmitting = true
       try {
         const payload = {
           userId: this.userId,
-          conceptId: this.currentConcept.id,
+          conceptId: this.currentLessonData.conceptId,
           code,
         }
 
@@ -385,9 +494,9 @@ export const useLessonStore = defineStore('lesson', {
           this.attempts = response.attemptNumber
         }
 
-        // Refresh progress/frontier if mastery updated
+        // Refresh progress if mastery updated
         if (response.masteryUpdate) {
-          await Promise.all([this.loadProgress(), this.loadFrontier()])
+          await this.loadProgress()
         }
 
         return response
@@ -404,18 +513,27 @@ export const useLessonStore = defineStore('lesson', {
     // =====================================================
 
     async nextLesson() {
+      const lessons = this.lessons
       const currentIndex = this.currentLessonIndex
-      if (currentIndex < this.frontier.length - 1) {
-        const nextConcept = this.frontier[currentIndex + 1]
-        await this.loadLesson(nextConcept.id)
+      if (currentIndex < lessons.length - 1) {
+        const nextLesson = lessons[currentIndex + 1]
+        await this.loadLesson(nextLesson.lessonId)
       }
     },
 
     async prevLesson() {
+      const lessons = this.lessons
       const currentIndex = this.currentLessonIndex
       if (currentIndex > 0) {
-        const prevConcept = this.frontier[currentIndex - 1]
-        await this.loadLesson(prevConcept.id)
+        const prevLesson = lessons[currentIndex - 1]
+        await this.loadLesson(prevLesson.lessonId)
+      }
+    },
+
+    markLessonCompleted(conceptId) {
+      const lesson = this.generatedLessons.find((l) => l.conceptId === conceptId)
+      if (lesson) {
+        lesson.completed = true
       }
     },
 
@@ -462,6 +580,22 @@ export const useLessonStore = defineStore('lesson', {
 // =====================================================
 // HELPER FUNCTIONS
 // =====================================================
+
+/**
+ * Extract category from conceptId
+ * e.g., "rust.basics.variables" → "Basics"
+ * @param {string} conceptId
+ * @returns {string}
+ */
+function extractCategoryFromConceptId(conceptId) {
+  if (!conceptId) return 'General'
+  const parts = conceptId.split('.')
+  // Take the second part (e.g., "basics" from "rust.basics.variables")
+  if (parts.length >= 2) {
+    return parts[1].charAt(0).toUpperCase() + parts[1].slice(1)
+  }
+  return 'General'
+}
 
 /**
  * Extract starter code from lesson markdown

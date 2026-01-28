@@ -62,6 +62,10 @@ export const useLessonStore = defineStore('lesson', {
     isSidebarOpen: false,
     showSystemUpdate: false,
 
+    // Submission
+    isSubmitting: false,
+    lastSubmission: null,
+
     // User profile (static for now, could be API-driven later)
     userProfile: {
       name: 'User',
@@ -355,6 +359,41 @@ export const useLessonStore = defineStore('lesson', {
       } catch (error) {
         console.error('Failed to update mastery:', error)
         throw error
+      }
+    },
+
+    async submitCode(code) {
+      if (!this.currentConcept) return
+
+      this.isSubmitting = true
+      try {
+        const payload = {
+          userId: this.userId,
+          conceptId: this.currentConcept.id,
+          code,
+        }
+
+        const response = await LearningAPI.submit(payload)
+
+        // Update state with result
+        this.lastSubmission = response
+
+        // Sync attempt number if available
+        if (typeof response.attemptNumber === 'number') {
+          this.attempts = response.attemptNumber
+        }
+
+        // Refresh progress/frontier if mastery updated
+        if (response.masteryUpdate) {
+          await Promise.all([this.loadProgress(), this.loadFrontier()])
+        }
+
+        return response
+      } catch (error) {
+        console.error('Submission failed:', error)
+        throw error
+      } finally {
+        this.isSubmitting = false
       }
     },
 

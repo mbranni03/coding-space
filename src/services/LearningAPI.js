@@ -242,6 +242,18 @@ export async function updateMastery(request) {
   })
 }
 
+/**
+ * Submit code for comprehensive evaluation
+ * @param {{ userId: string, conceptId: string, code: string }} request
+ * @returns {Promise<import('../types/lesson').SubmissionResponse>}
+ */
+export async function submit(request) {
+  return apiRequest('/submit', {
+    method: 'POST',
+    body: JSON.stringify(request),
+  })
+}
+
 // =====================================================
 // COMPILATION ENDPOINTS
 // =====================================================

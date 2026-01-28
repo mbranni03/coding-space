@@ -9,6 +9,15 @@
         </button>
       </div>
 
+      <!-- Knowledge Graph Button -->
+      <div class="graph-button-container">
+        <button class="btn-graph" @click="showGraphModal = true">
+          <span class="material-icons">account_tree</span>
+          <span class="btn-text">View Knowledge Graph</span>
+          <span class="material-icons arrow">arrow_forward</span>
+        </button>
+      </div>
+
       <div class="sidebar-content">
         <div class="path-container">
           <!-- Connector Line -->
@@ -40,16 +49,28 @@
         </div>
       </div>
     </aside>
+
+    <!-- Knowledge Graph Modal -->
+    <KnowledgeGraphModal
+      :isOpen="showGraphModal"
+      :userId="userId"
+      @close="showGraphModal = false"
+      @node-click="handleNodeClick"
+    />
   </div>
 </template>
 
 <script>
-import { defineComponent } from 'vue'
+import { defineComponent, ref } from 'vue'
 import { storeToRefs } from 'pinia'
 import { useLessonStore } from '../stores/store'
+import KnowledgeGraphModal from './KnowledgeGraphModal.vue'
 
 export default defineComponent({
   name: 'LessonSidebar',
+  components: {
+    KnowledgeGraphModal,
+  },
   props: {
     isOpen: {
       type: Boolean,
@@ -57,10 +78,12 @@ export default defineComponent({
     },
   },
   emits: ['close'],
-  setup() {
+  setup(props, { emit }) {
     const lessonStore = useLessonStore()
-    const { lessons, currentLessonId } = storeToRefs(lessonStore)
-    const { setCurrentLesson } = lessonStore
+    const { lessons, currentLessonId, userId } = storeToRefs(lessonStore)
+    const { setCurrentLesson, loadLesson } = lessonStore
+
+    const showGraphModal = ref(false)
 
     const selectLesson = (lesson) => {
       if (!lesson.isLocked) {
@@ -68,10 +91,19 @@ export default defineComponent({
       }
     }
 
+    const handleNodeClick = async (conceptId) => {
+      showGraphModal.value = false
+      emit('close')
+      await loadLesson(conceptId)
+    }
+
     return {
       lessons,
       currentLessonId,
+      userId,
       selectLesson,
+      showGraphModal,
+      handleNodeClick,
     }
   },
 })
@@ -312,5 +344,56 @@ export default defineComponent({
 .lesson-node.is-locked .lesson-title,
 .lesson-node.is-locked .lesson-desc {
   color: #52525b;
+}
+
+/* Knowledge Graph Button */
+.graph-button-container {
+  padding: 0 16px 16px;
+  border-bottom: 1px solid #1f1f23;
+}
+
+.btn-graph {
+  width: 100%;
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 14px 16px;
+  background: linear-gradient(135deg, rgba(59, 130, 246, 0.12) 0%, rgba(139, 92, 246, 0.12) 100%);
+  border: 1px solid rgba(59, 130, 246, 0.2);
+  border-radius: 12px;
+  color: #a5b4fc;
+  font-size: 0.875rem;
+  font-weight: 500;
+  cursor: pointer;
+  transition: all 0.25s ease;
+}
+
+.btn-graph:hover {
+  background: linear-gradient(135deg, rgba(59, 130, 246, 0.2) 0%, rgba(139, 92, 246, 0.2) 100%);
+  border-color: rgba(59, 130, 246, 0.4);
+  color: #fff;
+  transform: translateY(-1px);
+  box-shadow: 0 8px 20px rgba(59, 130, 246, 0.15);
+}
+
+.btn-graph .material-icons {
+  font-size: 20px;
+  color: #60a5fa;
+}
+
+.btn-graph .btn-text {
+  flex: 1;
+  text-align: left;
+}
+
+.btn-graph .arrow {
+  font-size: 16px;
+  opacity: 0.5;
+  transition: all 0.2s ease;
+}
+
+.btn-graph:hover .arrow {
+  opacity: 1;
+  transform: translateX(4px);
 }
 </style>

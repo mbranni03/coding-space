@@ -118,8 +118,77 @@
           </div>
         </div>
         <div class="console-content">
+          <!-- Submission Feedback Mode -->
           <div
-            v-if="output"
+            v-if="lastSubmission"
+            class="feedback-panel"
+            :class="lastSubmission.passed ? 'success' : 'error'"
+          >
+            <div class="feedback-header">
+              <div class="feedback-status">
+                <span class="material-icons">{{
+                  lastSubmission.passed ? 'check_circle' : 'info'
+                }}</span>
+                <h3>{{ lastSubmission.passed ? 'Target Achieved' : 'Needs Improvement' }}</h3>
+              </div>
+              <div class="score-badge" v-if="lastSubmission.attemptNumber">
+                <span class="label">Attempt</span>
+                <span class="val">{{ lastSubmission.attemptNumber }}</span>
+              </div>
+              <div class="score-badge" v-if="lastSubmission.masteryUpdate">
+                <span class="label">Mastery</span>
+                <span class="val"
+                  >{{ Math.round(lastSubmission.masteryUpdate.newScore * 100) }}%</span
+                >
+              </div>
+            </div>
+
+            <div class="feedback-content" v-if="parsedAnalysis">
+              <p class="feedback-message">{{ parsedAnalysis.feedback }}</p>
+            </div>
+            <div class="feedback-content" v-else>
+              <p class="feedback-message">{{ lastSubmission.analysis.feedback }}</p>
+            </div>
+
+            <!-- Hints -->
+            <div
+              v-if="
+                !lastSubmission.passed &&
+                parsedAnalysis &&
+                parsedAnalysis.hintsForNextAttempt?.length
+              "
+              class="hints-section"
+            >
+              <h4>Hints:</h4>
+              <ul>
+                <li v-for="(hint, i) in parsedAnalysis.hintsForNextAttempt" :key="i">
+                  {{ hint }}
+                </li>
+              </ul>
+            </div>
+
+            <!-- Next Lesson Action -->
+            <div v-if="lastSubmission.passed" class="actions-row">
+              <button class="btn btn-primary" @click="nextLesson">
+                Next Lesson <span class="material-icons">arrow_forward</span>
+              </button>
+            </div>
+
+            <!-- Compiler Error (if any, specifically for failures) -->
+            <div
+              v-if="
+                lastSubmission.compileResult?.stderr && lastSubmission.compileResult?.exitCode !== 0
+              "
+              class="compiler-error"
+            >
+              <h4>Compiler Output:</h4>
+              <pre>{{ lastSubmission.compileResult.stderr }}</pre>
+            </div>
+          </div>
+
+          <!-- Standard Output Mode -->
+          <div
+            v-else-if="output"
             class="output-text"
             :class="{ 'has-error': compileResult && !compileResult.success }"
           >
@@ -195,6 +264,8 @@ export default defineComponent({
       isCompiling,
       compileResult,
       editorCode,
+      isSubmitting,
+      lastSubmission,
     } = storeToRefs(lessonStore)
     const {
       nextLesson,
@@ -202,7 +273,7 @@ export default defineComponent({
       toggleSidebar,
       initialize,
       compileCode,
-      submitLesson,
+      submitCode,
       setEditorCode,
     } = lessonStore
 
@@ -215,7 +286,7 @@ export default defineComponent({
 
     // State
     const isRunning = computed(() => isCompiling.value)
-    const isSubmitting = ref(false)
+    // isSubmitting now comes from store
     const showOutput = ref(true)
     const output = ref('')
     const consoleExpanded = ref(false)
@@ -301,42 +372,44 @@ export default defineComponent({
       }
     })
 
+    // Watch for submission to auto-expand console
+    watch(lastSubmission, (submission) => {
+      if (submission) {
+        showOutput.value = true
+        consoleExpanded.value = true
+      }
+    })
+
     // Run code via API
     const runCode = async () => {
       showOutput.value = true
       output.value = '> Compiling...'
+
+      // Reset submission state so we show standard terminal output
+      lessonStore.$patch({ lastSubmission: null })
 
       await compileCode()
     }
 
     // Submit work and update mastery
     const submitWork = async () => {
-      isSubmitting.value = true
       showOutput.value = true
+      // Reset previous submission to ensure watcher triggers and UI clears
+      lessonStore.$patch({ lastSubmission: null })
 
       try {
-        // First run/compile to check if it works
-        const result = await compileCode()
+        const code = editorView.value ? editorView.value.state.doc.toString() : editorCode.value
 
-        // Extract error code if compilation failed
-        let errorCode
-        if (!result.success && result.stderr) {
-          const errorMatch = result.stderr.match(/error\[E(\d+)\]/)
-          errorCode = errorMatch ? `E${errorMatch[1]}` : undefined
-        }
+        // Show loading state in output
+        output.value = '> Submitting for evaluation...'
 
-        // Submit mastery update
-        const masteryResult = await submitLesson(result.success, errorCode)
+        await submitCode(code)
 
-        if (masteryResult.mastered) {
-          output.value += "\n\n🎉 Congratulations! You've mastered this concept!"
-        } else if (result.success) {
-          output.value += `\n\n✓ Good job! Mastery: ${Math.round(masteryResult.newScore * 100)}%`
-        }
+        // Force console expansion to show feedback
+        showOutput.value = true
+        consoleExpanded.value = true
       } catch (error) {
         output.value = `> Error: ${error.message}`
-      } finally {
-        isSubmitting.value = false
       }
     }
 
@@ -450,8 +523,42 @@ export default defineComponent({
       lessonError,
       isBackendOnline,
       compileResult,
+      lastSubmission,
       isFirst: computed(() => currentLessonIndex.value === 0),
       isLast: computed(() => currentLessonIndex.value === lessons.value.length - 1),
+      parsedAnalysis: computed(() => {
+        if (!lastSubmission.value || !lastSubmission.value.analysis) return null
+
+        const raw = lastSubmission.value.analysis
+        let feedback = raw.feedback
+        let hints = raw.hintsForNextAttempt || []
+
+        // Check if feedback contains JSON markdown or is a JSON string
+        if (
+          typeof feedback === 'string' &&
+          (feedback.includes('```json') || feedback.trim().startsWith('{'))
+        ) {
+          try {
+            // Clean up markdown tags
+            const jsonStr = feedback
+              .replace(/```json/g, '')
+              .replace(/```/g, '')
+              .trim()
+            const parsed = JSON.parse(jsonStr)
+
+            if (parsed.feedback) feedback = parsed.feedback
+            if (parsed.hintsForNextAttempt) hints = parsed.hintsForNextAttempt
+          } catch (e) {
+            console.error('Failed to parse feedback JSON', e)
+          }
+        }
+
+        return {
+          ...raw,
+          feedback,
+          hintsForNextAttempt: hints,
+        }
+      }),
     }
   },
 })
@@ -798,9 +905,165 @@ export default defineComponent({
 }
 
 @keyframes spin {
+  from {
+    transform: rotate(0deg);
+  }
   to {
     transform: rotate(360deg);
   }
+}
+
+/* Feedback Panel */
+.feedback-panel {
+  padding: 16px;
+  border-radius: 8px;
+  background-color: #1a1a1a;
+  border: 1px solid #333;
+}
+
+.feedback-panel.success {
+  background-color: rgba(6, 78, 59, 0.4); /* Darker Green */
+  border: 1px solid #059669;
+}
+
+.feedback-panel.error {
+  background-color: rgba(127, 29, 29, 0.4); /* Darker Red */
+  border: 1px solid #dc2626;
+}
+
+.feedback-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 16px;
+  padding-bottom: 12px;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.1);
+}
+
+.feedback-status {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
+.feedback-status .material-icons {
+  font-size: 2rem;
+}
+
+.feedback-status h3 {
+  margin: 0;
+  font-size: 1.25rem;
+  color: #fff;
+  font-weight: 700;
+  letter-spacing: 0.02em;
+}
+
+.feedback-panel.success .feedback-status {
+  color: #4ade80;
+}
+.feedback-panel.error .feedback-status {
+  color: #f87171;
+}
+
+.score-badge {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  background-color: rgba(0, 0, 0, 0.3);
+  padding: 4px 8px;
+  border-radius: 4px;
+}
+
+.score-badge .label {
+  text-transform: uppercase;
+  font-size: 0.7rem;
+  color: #9ca3af;
+  font-weight: 600;
+}
+
+.score-badge .val {
+  font-weight: bold;
+  color: #fff;
+}
+
+.feedback-message {
+  color: #e5e7eb;
+  line-height: 1.5;
+  margin-bottom: 16px;
+}
+
+.hints-section {
+  margin-top: 16px;
+  padding: 12px;
+  background-color: rgba(0, 0, 0, 0.2);
+  border-radius: 6px;
+}
+
+.hints-section h4 {
+  margin: 0 0 8px 0;
+  font-size: 0.9rem;
+  color: #fbbf24;
+}
+
+.hints-section ul {
+  margin: 0;
+  padding-left: 20px;
+  color: #d1d5db;
+}
+
+.hints-section li {
+  margin-bottom: 4px;
+}
+
+.compiler-error {
+  margin-top: 16px;
+  padding-top: 16px;
+  border-top: 1px solid rgba(255, 255, 255, 0.1);
+}
+
+.compiler-error h4 {
+  margin: 0 0 8px 0;
+  font-size: 0.9rem;
+  color: #ef4444;
+}
+
+.compiler-error pre {
+  background-color: #000;
+  padding: 8px;
+  border-radius: 4px;
+  font-family: 'Fira Code', monospace;
+  font-size: 0.85rem;
+  color: #fca5a5;
+  white-space: pre-wrap;
+  overflow-x: auto;
+}
+
+.actions-row {
+  margin-top: 16px;
+  display: flex;
+  justify-content: flex-end;
+}
+
+.btn-primary {
+  background-color: #2563eb;
+  color: white;
+  padding: 8px 16px;
+  border-radius: 6px;
+  font-weight: 500;
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  transition: background-color 0.2s;
+  border: none;
+  cursor: pointer;
+}
+
+.btn-primary:hover {
+  background-color: #1d4ed8;
+}
+
+.btn-primary .material-icons {
+  font-size: 18px;
 }
 
 /* Editor Header */

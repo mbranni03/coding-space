@@ -6,14 +6,16 @@
       </div>
       <div class="user-info">
         <h3 class="user-name">{{ userProfile.name }}</h3>
-        <span class="user-level">Level {{ userProfile.level }} Pro</span>
+        <span class="user-status">Online</span>
       </div>
     </div>
 
     <div class="stats-bar">
-      <div class="stat-mini xp" title="Total XP">
-        <span class="material-icons">bolt</span>
-        <span class="stat-value">{{ userProfile.xp }} xp</span>
+      <div class="stat-mini level-visual" title="Overall Level">
+        <div class="level-bars">
+          <div v-for="i in 4" :key="i" class="bar" :class="{ active: i <= overallLevel }"></div>
+        </div>
+        <span class="stat-value">Level {{ overallLevel }}</span>
       </div>
       <div class="divider-v"></div>
       <div class="stat-mini lessons" title="Lessons Completed">
@@ -23,7 +25,7 @@
       <div class="divider-v"></div>
       <div class="stat-mini time" title="Learning Time">
         <span class="material-icons">schedule</span>
-        <span class="stat-value">{{ userProfile.totalTime }}</span>
+        <span class="stat-value">{{ formattedTotalTime }}</span>
       </div>
     </div>
 
@@ -55,7 +57,7 @@ export default defineComponent({
   name: 'UserProfileCard',
   setup() {
     const store = useLessonStore()
-    const { userProfile, lessons } = storeToRefs(store)
+    const { userProfile, lessons, formattedTotalTime, overallLevel } = storeToRefs(store)
 
     const completedLessonsCount = computed(() => {
       return lessons.value.filter((l) => l.isCompleted).length
@@ -69,6 +71,8 @@ export default defineComponent({
       userProfile,
       completedLessonsCount,
       activeLanguages,
+      formattedTotalTime,
+      overallLevel,
     }
   },
 })
@@ -141,7 +145,7 @@ export default defineComponent({
   letter-spacing: -0.01em;
 }
 
-.user-level {
+.user-status {
   font-size: 0.875rem;
   color: #a1a1aa;
   font-weight: 500;
@@ -150,7 +154,7 @@ export default defineComponent({
   gap: 6px;
 }
 
-.user-level::before {
+.user-status::before {
   content: '';
   display: block;
   width: 6px;
@@ -201,6 +205,42 @@ export default defineComponent({
   font-size: 0.8125rem;
   font-weight: 600;
   color: #fff;
+}
+
+.level-visual {
+  gap: 10px;
+}
+
+.level-bars {
+  display: flex;
+  align-items: flex-end;
+  gap: 3px;
+  height: 16px;
+}
+
+.level-bars .bar {
+  width: 4px;
+  background-color: rgba(255, 255, 255, 0.1);
+  border-radius: 1px;
+  transition: all 0.3s ease;
+}
+
+.level-bars .bar:nth-child(1) {
+  height: 6px;
+}
+.level-bars .bar:nth-child(2) {
+  height: 9px;
+}
+.level-bars .bar:nth-child(3) {
+  height: 12px;
+}
+.level-bars .bar:nth-child(4) {
+  height: 16px;
+}
+
+.level-bars .bar.active {
+  background-color: #3b82f6;
+  box-shadow: 0 0 8px rgba(59, 130, 246, 0.5);
 }
 
 .divider-v {

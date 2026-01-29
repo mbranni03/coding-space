@@ -51,7 +51,16 @@ export const useLessonStore = defineStore('lesson', {
     isLoadingLessons: false,
 
     // Progress stats
-    progress: null,
+    progress: {
+      totalTime: 0,
+      topicLevels: {},
+      overallLevel: 1,
+      total: 0,
+      mastered: 0,
+      inProgress: 0,
+      notStarted: 0,
+      averageMastery: 0,
+    },
 
     // Compilation
     isCompiling: false,
@@ -174,8 +183,16 @@ export const useLessonStore = defineStore('lesson', {
       return this.currentLessonIndex === state.generatedLessons.length - 1
     },
 
-    masteryPercent(state) {
-      return state.progress ? Math.round(state.progress.averageMastery * 100) : 0
+    formattedTotalTime(state) {
+      const seconds = state.progress?.totalTime / 1000 || 0
+      const h = Math.floor(seconds / 3600)
+      const m = Math.floor((seconds % 3600) / 60)
+      if (h > 0) return `${h}h ${m}m`
+      return `${m}m`
+    },
+
+    overallLevel(state) {
+      return state.progress?.overallLevel || 1
     },
 
     // Lessons array for sidebar display
@@ -197,7 +214,7 @@ export const useLessonStore = defineStore('lesson', {
           description: lesson.isIntro
             ? 'Introduction'
             : extractCategoryFromConceptId(lesson.conceptId),
-          isCompleted: lesson.completed === true,
+          isCompleted: lesson.completed === true && !lesson.isIntro,
           isLocked: false, // All generated lessons are available
           generatedAt: lesson.generatedAt,
           isIntro: !!lesson.isIntro,
@@ -400,7 +417,26 @@ export const useLessonStore = defineStore('lesson', {
 
     async loadProgress() {
       try {
-        this.progress = await LearningAPI.getProgress(this.userId)
+        const data = await LearningAPI.getProgress(this.userId)
+
+        // Ensure averageMastery is calculated if not provided by backend
+        // This handles cases where only topicLevels is returned
+        if (
+          data?.topicLevels &&
+          (data.averageMastery === undefined || data.averageMastery === null)
+        ) {
+          const scores = Object.values(data.topicLevels)
+          if (scores.length > 0) {
+            data.averageMastery = scores.reduce((a, b) => a + b, 0) / scores.length
+          } else {
+            data.averageMastery = 0
+          }
+        }
+
+        this.progress = {
+          ...this.progress, // Keep defaults
+          ...data,
+        }
       } catch (error) {
         console.error('Failed to load progress:', error)
       }
@@ -444,36 +480,7 @@ export const useLessonStore = defineStore('lesson', {
     // MASTERY & SUBMISSION
     // =====================================================
 
-    async submitLesson(success, errorCode) {
-      if (!this.currentLessonData?.conceptId) {
-        throw new Error('No current lesson')
-      }
-
-      try {
-        const result = await LearningAPI.updateMastery({
-          userId: this.userId,
-          conceptId: this.currentLessonData.conceptId,
-          success,
-          attempts: this.attempts,
-          errorCode,
-        })
-
-        // Refresh progress
-        await this.loadProgress()
-
-        // Auto-advance if mastered
-        if (result.mastered) {
-          await this.loadNextLesson(this.currentLessonId)
-        }
-
-        return result
-      } catch (error) {
-        console.error('Failed to update mastery:', error)
-        throw error
-      }
-    },
-
-    async submitCode(code) {
+    async submitCode(code, timeSpent = 0) {
       if (!this.currentLessonData?.conceptId) return
 
       this.isSubmitting = true
@@ -482,6 +489,7 @@ export const useLessonStore = defineStore('lesson', {
           userId: this.userId,
           conceptId: this.currentLessonData.conceptId,
           code,
+          timeSpent,
         }
 
         const response = await LearningAPI.submit(payload)
@@ -489,15 +497,18 @@ export const useLessonStore = defineStore('lesson', {
         // Update state with result
         this.lastSubmission = response
 
+        // Mark as completed if passed and not an intro
+        if (response.passed && !this.currentLesson?.isIntro) {
+          this.markLessonCompleted(this.currentLessonData.conceptId)
+        }
+
         // Sync attempt number if available
         if (typeof response.attemptNumber === 'number') {
           this.attempts = response.attemptNumber
         }
 
-        // Refresh progress if mastery updated
-        if (response.masteryUpdate) {
-          await this.loadProgress()
-        }
+        // Always refresh progress after submission to get updated totalTime and overallLevel
+        await this.loadProgress()
 
         return response
       } catch (error) {

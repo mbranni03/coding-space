@@ -263,6 +263,7 @@ export default defineComponent({
     const leftPane = ref(null)
     const editorView = shallowRef(null)
     const activeFileIndex = ref(0)
+    const lessonStartTime = ref(Date.now())
 
     const lessonStore = useLessonStore()
     const {
@@ -378,7 +379,14 @@ export default defineComponent({
       try {
         const code = editorView.value ? editorView.value.state.doc.toString() : editorCode.value
         output.value = '> Submitting for evaluation...'
-        await submitCode(code)
+
+        const now = Date.now()
+        const timeSpent = now - lessonStartTime.value
+
+        await submitCode(code, timeSpent)
+
+        // Reset timer
+        lessonStartTime.value = now
         showOutput.value = true
         consoleExpanded.value = true
       } catch (error) {
@@ -392,6 +400,7 @@ export default defineComponent({
 
     // Watchers
     watch(currentLesson, (newLesson) => {
+      lessonStartTime.value = Date.now()
       output.value = ''
       showOutput.value = true
       consoleExpanded.value = false

@@ -17,10 +17,12 @@
         <!-- User Metrics -->
         <div class="row q-gutter-md">
           <div class="metric-card glass-panel row items-center q-px-md q-py-sm">
-            <q-icon name="bolt" color="amber-4" size="2rem" />
-            <div class="q-ml-sm">
+            <div class="level-bars q-mr-md">
+              <div v-for="i in 4" :key="i" class="bar" :class="{ active: i <= overallLevel }"></div>
+            </div>
+            <div>
               <div class="text-caption text-grey-5 text-uppercase">Level</div>
-              <div class="text-h5 text-weight-bold">{{ userProfile.level }}</div>
+              <div class="text-h5 text-weight-bold">{{ overallLevel }}</div>
             </div>
           </div>
 
@@ -28,15 +30,15 @@
             <q-icon name="schedule" color="blue-4" size="2rem" />
             <div class="q-ml-sm">
               <div class="text-caption text-grey-5 text-uppercase">Time Spent</div>
-              <div class="text-h5 text-weight-bold">{{ userProfile.totalTime }}</div>
+              <div class="text-h5 text-weight-bold">{{ formattedTotalTime }}</div>
             </div>
           </div>
 
           <div class="metric-card glass-panel row items-center q-px-md q-py-sm">
-            <q-icon name="stars" color="purple-4" size="2rem" />
+            <q-icon name="check_circle" color="green-4" size="2rem" />
             <div class="q-ml-sm">
-              <div class="text-caption text-grey-5 text-uppercase">XP</div>
-              <div class="text-h5 text-weight-bold">{{ userProfile.xp }}</div>
+              <div class="text-caption text-grey-5 text-uppercase">Lessons</div>
+              <div class="text-h5 text-weight-bold">{{ completedLessonsCount }}</div>
             </div>
           </div>
         </div>
@@ -96,7 +98,7 @@
 </template>
 
 <script>
-import { defineComponent, toRefs } from 'vue'
+import { defineComponent, toRefs, computed } from 'vue'
 import { useRouter } from 'vue-router'
 import { useLessonStore } from 'stores/store'
 
@@ -105,7 +107,11 @@ export default defineComponent({
   setup() {
     const router = useRouter()
     const store = useLessonStore()
-    const { userProfile } = toRefs(store)
+    const { userProfile, overallLevel, formattedTotalTime, lessons } = toRefs(store)
+
+    const completedLessonsCount = computed(() => {
+      return (lessons.value || []).filter((l) => l.isCompleted).length
+    })
 
     const selectLanguage = async (lang) => {
       if (lang.disabled) return
@@ -134,6 +140,9 @@ export default defineComponent({
 
     return {
       userProfile,
+      overallLevel,
+      completedLessonsCount,
+      formattedTotalTime,
       selectLanguage,
     }
   },
@@ -165,6 +174,38 @@ export default defineComponent({
 .metric-card {
   min-width: 140px;
   transition: transform 0.2s ease;
+}
+
+.level-bars {
+  display: flex;
+  align-items: flex-end;
+  gap: 4px;
+  height: 24px;
+}
+
+.level-bars .bar {
+  width: 6px;
+  background-color: rgba(255, 255, 255, 0.1);
+  border-radius: 2px;
+  transition: all 0.3s ease;
+}
+
+.level-bars .bar:nth-child(1) {
+  height: 8px;
+}
+.level-bars .bar:nth-child(2) {
+  height: 13px;
+}
+.level-bars .bar:nth-child(3) {
+  height: 18px;
+}
+.level-bars .bar:nth-child(4) {
+  height: 24px;
+}
+
+.level-bars .bar.active {
+  background-color: #3b82f6;
+  box-shadow: 0 0 12px rgba(59, 130, 246, 0.5);
 }
 
 .metric-card:hover {

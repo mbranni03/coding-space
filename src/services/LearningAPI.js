@@ -31,11 +31,14 @@ const API_BASE = 'http://localhost:3000'
 
 /**
  * @typedef {Object} UserProgress
- * @property {number} total
- * @property {number} mastered
- * @property {number} inProgress
- * @property {number} notStarted
- * @property {number} averageMastery
+ * @property {number} totalTime - Total learning time in seconds
+ * @property {Record<string, number>} topicLevels - Mastery level per topic
+ * @property {number} overallLevel - Overall level from 1 to 4
+ * @property {number} total - Total concepts
+ * @property {number} mastered - Mastered concepts
+ * @property {number} inProgress - Concepts in progress
+ * @property {number} notStarted - Concepts not started
+ * @property {number} averageMastery - Average mastery score (0-1)
  */
 
 /**
@@ -45,13 +48,6 @@ const API_BASE = 'http://localhost:3000'
  * @property {string} stderr
  * @property {number} exitCode
  * @property {{ stdout: string, stderr: string }|null} runOutput
- */
-
-/**
- * @typedef {Object} MasteryUpdateResult
- * @property {number} previousScore
- * @property {number} newScore
- * @property {boolean} mastered
  */
 
 class LearningAPIError extends Error {
@@ -193,53 +189,8 @@ export async function getLessonById(lessonId, userId) {
 }
 
 /**
- * Force regenerate a lesson
- * @param {string} conceptId
- * @param {{ model?: string, force?: boolean, userId?: string }} [options]
- * @returns {Promise<{ lesson: GeneratedLesson, regenerated: boolean }>}
- */
-export async function regenerateLesson(conceptId, options = {}) {
-  return apiRequest('/lesson/generate', {
-    method: 'POST',
-    body: JSON.stringify({
-      conceptId,
-      model: options.model,
-      force: options.force ?? true,
-      userId: options.userId,
-    }),
-  })
-}
-
-/**
- * Delete a cached lesson
- * @param {string} conceptId
- * @returns {Promise<{ deleted: boolean }>}
- */
-export async function deleteLesson(conceptId) {
-  return apiRequest(`/lesson/${conceptId}`, {
-    method: 'DELETE',
-  })
-}
-
-// =====================================================
-// MASTERY ENDPOINTS
-// =====================================================
-
-/**
- * Update mastery after completing a lesson
- * @param {{ userId: string, conceptId: string, success: boolean, attempts: number, errorCode?: string }} request
- * @returns {Promise<MasteryUpdateResult>}
- */
-export async function updateMastery(request) {
-  return apiRequest('/mastery', {
-    method: 'POST',
-    body: JSON.stringify(request),
-  })
-}
-
-/**
  * Submit code for comprehensive evaluation
- * @param {{ userId: string, conceptId: string, code: string }} request
+ * @param {{ userId: string, conceptId: string, code: string, timeSpent: number }} request
  * @typedef {Object} SubmitResponse
  * @property {boolean} passed
  * @property {Object} analysis

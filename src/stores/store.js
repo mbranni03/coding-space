@@ -60,6 +60,7 @@ export const useLessonStore = defineStore('lesson', {
       inProgress: 0,
       notStarted: 0,
       averageMastery: 0,
+      languages: {},
     },
 
     // Compilation
@@ -100,8 +101,8 @@ export const useLessonStore = defineStore('lesson', {
           description: 'Great for data science and rapid prototyping.',
           color: '#3572A5',
           icon: 'fab fa-python',
-          comingSoon: true,
-          disabled: true,
+          comingSoon: false,
+          disabled: false,
         },
         {
           id: 'javascript',
@@ -109,8 +110,17 @@ export const useLessonStore = defineStore('lesson', {
           description: 'The language of the web.',
           color: '#f1e05a',
           icon: 'fab fa-square-js',
-          comingSoon: true,
-          disabled: true,
+          comingSoon: false,
+          disabled: false,
+        },
+        {
+          id: 'typescript',
+          name: 'TypeScript',
+          description: 'JavaScript with types for better tooling.',
+          color: '#3178C6',
+          icon: 'fab fa-square-js',
+          comingSoon: false,
+          disabled: false,
         },
       ],
     },
@@ -139,13 +149,13 @@ export const useLessonStore = defineStore('lesson', {
         isLocked: false,
         files: state.currentLessonData.verificationTask?.starterFiles?.map((f) => ({
           name: f.path,
-          language: f.path.endsWith('.rs') ? 'rust' : 'text',
+          language: getLanguageFromPath(f.path, state.currentLanguage),
           code: f.content,
         })) || [
           {
-            name: 'src/main.rs',
-            language: 'rust',
-            code: extractStarterCode(state.currentLessonData.markdown),
+            name: getMainFileName(state.currentLanguage),
+            language: state.currentLanguage,
+            code: extractStarterCode(state.currentLessonData.markdown, state.currentLanguage),
           },
         ],
         verificationTask: state.currentLessonData.verificationTask,
@@ -301,14 +311,17 @@ export const useLessonStore = defineStore('lesson', {
         if (lessons && lessons.length > 0) {
           // Navigate to the latest (last) lesson
           const latestLesson = lessons[lessons.length - 1]
-          router.push({ name: 'learn', params: { lessonId: latestLesson.lessonId } })
+          router.push({
+            name: 'learn',
+            params: { language: languageId, lessonId: latestLesson.lessonId },
+          })
         } else {
           // Fallback if no lessons found
-          router.push('/learn')
+          router.push({ name: 'learn', params: { language: languageId } })
         }
       } catch (e) {
         console.error('Failed to resume course:', e)
-        router.push('/learn')
+        router.push('/')
       }
     },
 
@@ -337,13 +350,18 @@ export const useLessonStore = defineStore('lesson', {
       }
     },
 
-    async loadNextLesson(currentLessonId) {
+    async loadNextLesson(currentConceptId) {
       this.isLoadingLesson = true
       this.isGeneratingLesson = true
       this.lessonError = null
 
       try {
-        const response = await LearningAPI.getNextLesson(this.userId, currentLessonId)
+        // Pass language to the API - REQUIRED by the new backend
+        const response = await LearningAPI.getNextLesson(
+          this.userId,
+          currentConceptId,
+          this.currentLanguage,
+        )
 
         if (!response.lesson) {
           this.lessonError = response.message || 'No lessons available'
@@ -363,11 +381,11 @@ export const useLessonStore = defineStore('lesson', {
         // Load starter code from verification task or markdown
         const starterFiles = lessonData.verificationTask?.starterFiles
         if (starterFiles && starterFiles.length > 0) {
-          const mainFile = starterFiles.find((f) => f.path.endsWith('main.rs')) || starterFiles[0]
+          const mainFile = findMainFile(starterFiles, this.currentLanguage)
           this.editorCode = mainFile.content
         } else if (!lessonData.isIntro) {
           // Only extract code if it's not an intro
-          this.editorCode = extractStarterCode(lessonData.markdown)
+          this.editorCode = extractStarterCode(lessonData.markdown, this.currentLanguage)
         } else {
           this.editorCode = ''
         }
@@ -394,10 +412,10 @@ export const useLessonStore = defineStore('lesson', {
         // Load starter code from verification task or markdown
         const starterFiles = existing.verificationTask?.starterFiles
         if (starterFiles && starterFiles.length > 0) {
-          const mainFile = starterFiles.find((f) => f.path.endsWith('main.rs')) || starterFiles[0]
+          const mainFile = findMainFile(starterFiles, this.currentLanguage)
           this.editorCode = mainFile.content
         } else if (!existing.isIntro) {
-          this.editorCode = extractStarterCode(existing.markdown)
+          this.editorCode = extractStarterCode(existing.markdown, this.currentLanguage)
         } else {
           this.editorCode = ''
         }
@@ -425,10 +443,10 @@ export const useLessonStore = defineStore('lesson', {
         // Load starter code from verification task or markdown
         const starterFiles = lessonData.verificationTask?.starterFiles
         if (starterFiles && starterFiles.length > 0) {
-          const mainFile = starterFiles.find((f) => f.path.endsWith('main.rs')) || starterFiles[0]
+          const mainFile = findMainFile(starterFiles, this.currentLanguage)
           this.editorCode = mainFile.content
         } else if (!lessonData.isIntro) {
-          this.editorCode = extractStarterCode(lessonData.markdown)
+          this.editorCode = extractStarterCode(lessonData.markdown, this.currentLanguage)
         } else {
           this.editorCode = ''
         }
@@ -483,12 +501,13 @@ export const useLessonStore = defineStore('lesson', {
       this.attempts++
 
       try {
+        // Use current language for compilation
         const result = await LearningAPI.compile({
-          language: 'rust',
+          language: this.currentLanguage,
           code: this.editorCode,
         })
 
-        // Normalize result
+        // Normalize result - 0 is always success across all languages
         if (result.success === undefined) {
           result.success = result.exitCode === 0
         }
@@ -641,25 +660,114 @@ function extractCategoryFromConceptId(conceptId) {
 }
 
 /**
- * Extract starter code from lesson markdown
- * Looks for code blocks with `rust` language
+ * Language configuration for starter code and file detection
  */
-function extractStarterCode(markdown) {
-  if (!markdown) return 'fn main() {\n    // Start coding here\n}'
+const LANGUAGE_CONFIG = {
+  rust: {
+    mainFile: 'src/main.rs',
+    extensions: ['.rs'],
+    defaultCode: 'fn main() {\n    // Start coding here\n}',
+    codeBlockId: 'rust',
+  },
+  python: {
+    mainFile: 'main.py',
+    extensions: ['.py'],
+    defaultCode:
+      '# Start coding here\n\ndef main():\n    pass\n\nif __name__ == "__main__":\n    main()',
+    codeBlockId: 'python',
+  },
+  javascript: {
+    mainFile: 'index.js',
+    extensions: ['.js', '.mjs'],
+    defaultCode: '// Start coding here\n\nfunction main() {\n    \n}\n\nmain();',
+    codeBlockId: 'javascript',
+  },
+  typescript: {
+    mainFile: 'index.ts',
+    extensions: ['.ts', '.tsx'],
+    defaultCode: '// Start coding here\n\nfunction main(): void {\n    \n}\n\nmain();',
+    codeBlockId: 'typescript',
+  },
+}
 
-  // Look for "Starting Code" section
-  const startingMatch = markdown.match(/\*\*Starting Code:\*\*\s*\n```rust\s*\n([\s\S]*?)\n```/i)
+/**
+ * Get the main file name for a language
+ * @param {string} language
+ * @returns {string}
+ */
+function getMainFileName(language) {
+  return LANGUAGE_CONFIG[language]?.mainFile || LANGUAGE_CONFIG.rust.mainFile
+}
+
+/**
+ * Get the language from a file path
+ * @param {string} filePath
+ * @param {string} [fallbackLanguage='rust']
+ * @returns {string}
+ */
+function getLanguageFromPath(filePath, fallbackLanguage = 'rust') {
+  if (!filePath) return fallbackLanguage
+
+  for (const [lang, config] of Object.entries(LANGUAGE_CONFIG)) {
+    if (config.extensions.some((ext) => filePath.endsWith(ext))) {
+      return lang
+    }
+  }
+  return fallbackLanguage
+}
+
+/**
+ * Find the main file from an array of starter files
+ * @param {Array<{path: string, content: string}>} starterFiles
+ * @param {string} language
+ * @returns {{path: string, content: string}}
+ */
+function findMainFile(starterFiles, language) {
+  const config = LANGUAGE_CONFIG[language] || LANGUAGE_CONFIG.rust
+
+  // First try to find exact match for main file
+  const exactMatch = starterFiles.find((f) => f.path.endsWith(config.mainFile))
+  if (exactMatch) return exactMatch
+
+  // Then try to find any file with the right extension
+  const extMatch = starterFiles.find((f) => config.extensions.some((ext) => f.path.endsWith(ext)))
+  if (extMatch) return extMatch
+
+  // Fallback to first file
+  return starterFiles[0]
+}
+
+/**
+ * Extract starter code from lesson markdown
+ * Looks for code blocks with the appropriate language tag
+ * @param {string} markdown
+ * @param {string} [language='rust']
+ * @returns {string}
+ */
+function extractStarterCode(markdown, language = 'rust') {
+  const config = LANGUAGE_CONFIG[language] || LANGUAGE_CONFIG.rust
+  const langTag = config.codeBlockId
+
+  if (!markdown) return config.defaultCode
+
+  // Look for "Starting Code" section with the specific language
+  const startingRegex = new RegExp(
+    `\\*\\*Starting Code:\\*\\*\\s*\\n\`\`\`${langTag}\\s*\\n([\\s\\S]*?)\\n\`\`\``,
+    'i',
+  )
+  const startingMatch = markdown.match(startingRegex)
   if (startingMatch?.[1]) {
     return startingMatch[1].trim()
   }
 
-  // Fallback: find the first rust code block
-  const codeMatch = markdown.match(/```rust\s*\n([\s\S]*?)\n```/)
+  // Fallback: find the first code block with the language tag
+  const codeRegex = new RegExp(`\`\`\`${langTag}\\s*\\n([\\s\\S]*?)\\n\`\`\``)
+  const codeMatch = markdown.match(codeRegex)
   if (codeMatch?.[1]) {
     return codeMatch[1].trim()
   }
 
-  return 'fn main() {\n    // Start coding here\n}'
+  return config.defaultCode
 }
 
 if (import.meta.hot) {

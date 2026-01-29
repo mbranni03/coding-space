@@ -4,7 +4,12 @@ const routes = [
     component: () => import('layouts/MainLayout.vue'),
     children: [
       { path: '', component: () => import('pages/IndexPage.vue') },
-      { path: 'learn/:lessonId?', name: 'learn', component: () => import('pages/LessonPage.vue') },
+      { path: ':language', name: 'language-index', component: () => import('pages/IndexPage.vue') },
+      {
+        path: ':language/learn/:lessonId?',
+        name: 'learn',
+        component: () => import('pages/LessonPage.vue'),
+      },
     ],
   },
 

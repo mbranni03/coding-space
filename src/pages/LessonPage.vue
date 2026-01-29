@@ -234,6 +234,8 @@ import {
 } from '@codemirror/view'
 import { defaultKeymap, history, historyKeymap } from '@codemirror/commands'
 import { rust } from '@codemirror/lang-rust'
+import { python } from '@codemirror/lang-python'
+import { javascript } from '@codemirror/lang-javascript'
 import { bracketMatching, foldGutter, foldKeymap, indentOnInput } from '@codemirror/language'
 import { searchKeymap, highlightSelectionMatches } from '@codemirror/search'
 import {
@@ -280,6 +282,7 @@ export default defineComponent({
       editorCode,
       isSubmitting,
       lastSubmission,
+      currentLanguage,
     } = storeToRefs(lessonStore)
     const {
       nextLesson,
@@ -317,7 +320,10 @@ export default defineComponent({
 
         // Update URL to match new lesson
         if (currentLesson.value?.lessonId) {
-          router.push({ name: 'learn', params: { lessonId: currentLesson.value.lessonId } })
+          router.push({
+            name: 'learn',
+            params: { language: currentLanguage.value, lessonId: currentLesson.value.lessonId },
+          })
         }
       }
     }
@@ -406,7 +412,15 @@ export default defineComponent({
       consoleExpanded.value = false
       hasCompiledSuccessfully.value = false
       if (newLesson?.files) {
-        const mainIndex = newLesson.files.findIndex((f) => f.name.endsWith('main.rs'))
+        // Find the main file based on current language
+        const mainExtensions = {
+          rust: 'main.rs',
+          python: 'main.py',
+          javascript: 'index.js',
+          typescript: 'index.ts',
+        }
+        const mainExt = mainExtensions[currentLanguage.value] || 'main.rs'
+        const mainIndex = newLesson.files.findIndex((f) => f.name.endsWith(mainExt))
         activeFileIndex.value = mainIndex >= 0 ? mainIndex : 0
       } else {
         activeFileIndex.value = 0
@@ -468,6 +482,21 @@ export default defineComponent({
       }
     })
 
+    // Get the appropriate CodeMirror language extension based on current language
+    const getLanguageExtension = () => {
+      switch (currentLanguage.value) {
+        case 'python':
+          return python()
+        case 'javascript':
+          return javascript()
+        case 'typescript':
+          return javascript({ typescript: true })
+        case 'rust':
+        default:
+          return rust()
+      }
+    }
+
     const initEditor = () => {
       if (!editorRef.value) return
 
@@ -518,7 +547,7 @@ export default defineComponent({
             ...completionKeymap,
             ...lintKeymap,
           ]),
-          rust(),
+          getLanguageExtension(),
           EditorView.theme(
             {
               '&': { height: '100%', fontSize: '14px', backgroundColor: '#000000' },
@@ -546,8 +575,22 @@ export default defineComponent({
       }
     })
 
+    // Reinitialize editor when language changes to update syntax highlighting
+    watch(currentLanguage, () => {
+      if (editorRef.value) {
+        nextTick(() => {
+          initEditor()
+        })
+      }
+    })
+
     // Initialize on mount
     onMounted(async () => {
+      // Sync language from route if available
+      if (route.params.language && route.params.language !== currentLanguage.value) {
+        await lessonStore.loadLessonsForLanguage(route.params.language)
+      }
+
       // Initialize store (loads lessons from API)
       await initialize()
 
@@ -558,7 +601,10 @@ export default defineComponent({
         await lessonStore.loadLesson(route.params.lessonId)
       } else if (currentLesson.value?.lessonId) {
         // If store loaded a default lesson, update URL to match
-        router.replace({ name: 'learn', params: { lessonId: currentLesson.value.lessonId } })
+        router.replace({
+          name: 'learn',
+          params: { language: currentLanguage.value, lessonId: currentLesson.value.lessonId },
+        })
       }
 
       // If editorRef is already available on mount, initialize it

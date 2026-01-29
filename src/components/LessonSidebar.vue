@@ -95,7 +95,10 @@ export default defineComponent({
     const selectLesson = (lesson) => {
       if (!lesson.isLocked) {
         // Navigate to the lesson route, which will trigger loading via the page watcher
-        router.push({ name: 'learn', params: { lessonId: lesson.lessonId } })
+        router.push({
+          name: 'learn',
+          params: { language: lessonStore.currentLanguage, lessonId: lesson.lessonId },
+        })
 
         // On mobile/narrow screens, we might want to close the sidebar
         if (window.innerWidth < 1024) {

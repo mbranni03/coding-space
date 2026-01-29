@@ -164,7 +164,8 @@ export default defineComponent({
 
       try {
         const effectiveUserId = props.userId || store.userId
-        const graphData = await LearningAPI.getVisualization(effectiveUserId)
+        // Pass current language to filter the knowledge graph
+        const graphData = await LearningAPI.getVisualization(effectiveUserId, store.currentLanguage)
 
         mermaidCode.value = graphData
         await renderGraph()

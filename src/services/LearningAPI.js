@@ -39,6 +39,7 @@ const API_BASE = 'http://localhost:3000'
  * @property {number} inProgress - Concepts in progress
  * @property {number} notStarted - Concepts not started
  * @property {number} averageMastery - Average mastery score (0-1)
+ * @property {Record<string, { total: number, mastered: number, inProgress: number, notStarted: number, averageMastery: number, overallLevel: number, totalTime: number }>} languages - Detailed stats per language
  */
 
 /**
@@ -122,13 +123,14 @@ async function apiRequest(endpoint, options = {}) {
 /**
  * Get the next lesson based on current progress
  * @param {string} userId
- * @param {string} [currentLessonId] - Current lesson ID (e.g., "004_rust.basics.functions")
+ * @param {string} [currentConceptId] - Current concept ID (e.g., "rust.basics.functions")
+ * @param {string} [language='rust'] - Language to get lessons for (required by backend)
  * @returns {Promise<{ lesson: GeneratedLesson, cached: boolean }>}
  */
-export async function getNextLesson(userId, currentLessonId) {
+export async function getNextLesson(userId, currentConceptId, language = 'rust') {
   return apiRequest('/lesson/next', {
     method: 'POST',
-    body: JSON.stringify({ userId, currentLessonId }),
+    body: JSON.stringify({ userId, currentConceptId, language }),
   })
 }
 
@@ -144,10 +146,14 @@ export async function getProgress(userId) {
 /**
  * Get Mermaid diagram of knowledge graph
  * @param {string} [userId]
+ * @param {string} [language] - Optional language filter (e.g., 'python')
  * @returns {Promise<string>}
  */
-export async function getVisualization(userId) {
-  const params = userId ? `?userId=${encodeURIComponent(userId)}` : ''
+export async function getVisualization(userId, language) {
+  const queryParams = []
+  if (userId) queryParams.push(`userId=${encodeURIComponent(userId)}`)
+  if (language) queryParams.push(`language=${encodeURIComponent(language)}`)
+  const params = queryParams.length > 0 ? `?${queryParams.join('&')}` : ''
   return apiRequest(`/visualize${params}`)
 }
 

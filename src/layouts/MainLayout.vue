@@ -54,7 +54,7 @@ export default defineComponent({
     const route = useRoute()
     const isProfileOpen = ref(false)
 
-    const isHomePage = computed(() => route.path === '/')
+    const isHomePage = computed(() => route.path === '/' || route.name === 'language-index')
 
     const toggleProfile = () => {
       isProfileOpen.value = !isProfileOpen.value

@@ -53,3 +53,12 @@
 .level-bars .bar:nth-child(4) {
   height: 100%;
 }
+
+.level-bars-mini {
+  height: 16px;
+  gap: 3px;
+}
+
+.level-bars-mini .bar {
+  width: 4px;
+}

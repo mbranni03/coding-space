@@ -51,12 +51,38 @@
         <div class="row q-col-gutter-lg">
           <div v-for="lang in userProfile.languages" :key="lang.id" class="col-12 col-md-4">
             <q-card
-              class="language-card column no-wrap"
+              class="language-card column no-wrap relative-position"
               :class="{ 'disabled-card': lang.disabled, 'cursor-pointer': !lang.disabled }"
               v-ripple="!lang.disabled"
               @click="selectLanguage(lang)"
             >
               <div class="q-pa-lg flex-grow-1">
+                <!-- Language Stats Top Right -->
+                <div
+                  v-if="!lang.disabled && progress.languages?.[lang.id]"
+                  class="absolute-top-right q-pa-md column items-end q-gutter-xs"
+                >
+                  <div class="row items-center">
+                    <div class="level-bars level-bars-mini q-mr-sm">
+                      <div
+                        v-for="i in 4"
+                        :key="i"
+                        class="bar"
+                        :class="{ active: i <= (progress.languages[lang.id].overallLevel || 0) }"
+                      ></div>
+                    </div>
+                    <div class="text-caption text-grey-5 font-outfit text-weight-bold">
+                      LVL {{ progress.languages[lang.id].overallLevel || 1 }}
+                    </div>
+                  </div>
+                  <div class="row items-center">
+                    <q-icon name="schedule" size="12px" color="grey-6" class="q-mr-xs" />
+                    <div class="text-caption text-grey-6">
+                      {{ formatTime(progress.languages[lang.id].totalTime) }}
+                    </div>
+                  </div>
+                </div>
+
                 <div class="row items-center justify-between q-mb-md">
                   <q-avatar
                     :style="{ backgroundColor: 'rgba(255,255,255,0.1)' }"
@@ -85,7 +111,7 @@
                 >
                   {{ lang.name }}
                 </div>
-                <div class="text-grey-5 text-body2" style="min-height: 48px">
+                <div class="text-grey-5 text-body2">
                   {{ lang.description }}
                 </div>
               </div>
@@ -98,8 +124,8 @@
 </template>
 
 <script>
-import { defineComponent, computed } from 'vue'
-import { useRouter } from 'vue-router'
+import { defineComponent, computed, onMounted } from 'vue'
+import { useRouter, useRoute } from 'vue-router'
 import { useLessonStore } from 'stores/store'
 import { storeToRefs } from 'pinia'
 
@@ -107,8 +133,9 @@ export default defineComponent({
   name: 'IndexPage',
   setup() {
     const router = useRouter()
+    const route = useRoute()
     const store = useLessonStore()
-    const { userProfile, overallLevel, formattedTotalTime, lessons } = storeToRefs(store)
+    const { userProfile, overallLevel, formattedTotalTime, lessons, progress } = storeToRefs(store)
 
     const completedLessonsCount = computed(() => {
       return (lessons.value || []).filter((l) => l.isCompleted).length
@@ -119,11 +146,28 @@ export default defineComponent({
       await store.resumeCourse(lang.id, router)
     }
 
+    onMounted(() => {
+      store.loadProgress()
+      if (route.params.language) {
+        selectLanguage({ id: route.params.language })
+      }
+    })
+
+    const formatTime = (ms) => {
+      const seconds = ms / 1000 || 0
+      const h = Math.floor(seconds / 3600)
+      const m = Math.floor((seconds % 3600) / 60)
+      if (h > 0) return `${h}h ${m}m`
+      return `${m}m`
+    }
+
     return {
       userProfile,
       overallLevel,
       completedLessonsCount,
       formattedTotalTime,
+      progress,
+      formatTime,
       selectLanguage,
     }
   },

@@ -76,7 +76,7 @@
 </template>
 
 <script>
-import { defineComponent, ref, computed, onMounted, onUnmounted, nextTick } from 'vue'
+import { defineComponent, ref, computed, onMounted, onUnmounted, nextTick, watch } from 'vue'
 import mermaid from 'mermaid'
 import * as LearningAPI from '../services/LearningAPI'
 import { useLessonStore } from '../stores/store'
@@ -91,6 +91,10 @@ export default defineComponent({
     autoLoad: {
       type: Boolean,
       default: true,
+    },
+    language: {
+      type: String,
+      default: null,
     },
   },
   emits: ['node-click', 'loaded', 'error'],
@@ -113,12 +117,14 @@ export default defineComponent({
     const isPanning = ref(false)
     const panStart = ref({ x: 0, y: 0 })
 
+    const effectiveLanguage = computed(() => props.language || store.currentLanguage)
+
     const masteryPercent = computed(() => {
-      if (!store.shouldShowLanguageStats(store.currentLanguage)) {
+      if (!store.shouldShowLanguageStats(effectiveLanguage.value)) {
         return null
       }
 
-      const langStats = store.progress?.languages?.[store.currentLanguage]
+      const langStats = store.progress?.languages?.[effectiveLanguage.value]
       if (langStats) {
         return Math.round(langStats.averageMastery * 100)
       }
@@ -154,7 +160,7 @@ export default defineComponent({
         nodeTextColor: '#fff',
       },
       flowchart: {
-        useMaxWidth: true,
+        useMaxWidth: false,
         htmlLabels: true,
         curve: 'basis',
         padding: 20,
@@ -171,7 +177,10 @@ export default defineComponent({
       try {
         const effectiveUserId = props.userId || store.userId
         // Pass current language to filter the knowledge graph
-        const graphData = await LearningAPI.getVisualization(effectiveUserId, store.currentLanguage)
+        const graphData = await LearningAPI.getVisualization(
+          effectiveUserId,
+          effectiveLanguage.value,
+        )
 
         mermaidCode.value = graphData
         await renderGraph()
@@ -261,6 +270,13 @@ export default defineComponent({
     }
 
     onMounted(() => {
+      if (props.autoLoad) {
+        loadGraph()
+      }
+    })
+
+    // Reload graph if language changes
+    watch(effectiveLanguage, () => {
       if (props.autoLoad) {
         loadGraph()
       }

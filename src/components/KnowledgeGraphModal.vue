@@ -8,7 +8,12 @@
               <span class="material-icons">close</span>
             </button>
           </div>
-          <KnowledgeGraph :userId="userId" :autoLoad="true" @node-click="handleNodeClick" />
+          <KnowledgeGraph
+            :userId="userId"
+            :language="language"
+            :autoLoad="true"
+            @node-click="handleNodeClick"
+          />
         </div>
       </div>
     </Transition>
@@ -30,6 +35,10 @@ export default defineComponent({
       default: false,
     },
     userId: {
+      type: String,
+      default: null,
+    },
+    language: {
       type: String,
       default: null,
     },

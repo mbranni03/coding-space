@@ -1,69 +1,81 @@
 <template>
-  <div class="ai-assistant-container">
-    <!-- Chat Panel -->
-    <Transition name="slide-up">
-      <div v-if="isOpen" class="assistant-panel" :class="{ 'is-wide': isWide }">
-        <div class="panel-header">
-          <div class="header-content">
-            <span class="assistant-name">AI Mentor</span>
-            <span class="assistant-status">Online</span>
-          </div>
-          <div class="panel-header-actions">
-            <button
-              class="btn-header-action"
-              @click="isWide = !isWide"
-              :title="isWide ? 'Shrink' : 'Expand'"
-            >
-              <span class="material-icons">{{ isWide ? 'close_fullscreen' : 'open_in_full' }}</span>
-            </button>
-            <button class="btn-minimize" @click="toggleChat">
-              <span class="material-icons">close</span>
-            </button>
-          </div>
-        </div>
+  <div class="ai-assistant-wrapper">
+    <!-- Navbar Toggle Button -->
+    <button
+      class="nav-assistant-btn"
+      :class="{ 'is-active': isOpen }"
+      @click="toggleChat"
+      title="Ask AI Mentor"
+    >
+      <div class="icon-wrapper">
+        <span class="material-icons">auto_awesome</span>
+      </div>
+      <span class="btn-label">AI Mentor</span>
+    </button>
 
-        <div class="messages-container" ref="messagesRef">
-          <div
-            v-for="(msg, index) in messages"
-            :key="index"
-            class="message-wrapper"
-            :class="msg.role"
-          >
-            <div
-              class="message-content"
-              :class="{ 'markdown-body': msg.role === 'assistant' }"
-              v-html="renderMarkdown(msg.text)"
-            ></div>
-          </div>
-          <div v-if="isTyping" class="message-wrapper assistant">
-            <div class="message-content typing">
-              <span class="dot"></span>
-              <span class="dot"></span>
-              <span class="dot"></span>
+    <!-- Chat Panel (Teleported to body for global overlay) -->
+    <Teleport to="body">
+      <div class="ai-assistant-overlay">
+        <Transition name="slide-up">
+          <div v-if="isOpen" class="assistant-panel" :class="{ 'is-wide': isWide }">
+            <div class="panel-header">
+              <div class="header-content">
+                <span class="assistant-name">AI Mentor</span>
+                <span class="assistant-status">Online</span>
+              </div>
+              <div class="panel-header-actions">
+                <button
+                  class="btn-header-action"
+                  @click="isWide = !isWide"
+                  :title="isWide ? 'Shrink' : 'Expand'"
+                >
+                  <span class="material-icons">
+                    {{ isWide ? 'close_fullscreen' : 'open_in_full' }}
+                  </span>
+                </button>
+                <button class="btn-minimize" @click="toggleChat">
+                  <span class="material-icons">close</span>
+                </button>
+              </div>
+            </div>
+
+            <div class="messages-container" ref="messagesRef">
+              <div
+                v-for="(msg, index) in messages"
+                :key="index"
+                class="message-wrapper"
+                :class="msg.role"
+              >
+                <div
+                  class="message-content"
+                  :class="{ 'markdown-body': msg.role === 'assistant' }"
+                  v-html="renderMarkdown(msg.text)"
+                ></div>
+              </div>
+              <div v-if="isTyping" class="message-wrapper assistant">
+                <div class="message-content typing">
+                  <span class="dot"></span>
+                  <span class="dot"></span>
+                  <span class="dot"></span>
+                </div>
+              </div>
+            </div>
+
+            <div class="input-container">
+              <input
+                v-model="userInput"
+                type="text"
+                placeholder="Ask a question..."
+                @keyup.enter="sendMessage"
+              />
+              <button class="btn-send" @click="sendMessage" :disabled="!userInput.trim()">
+                <span class="material-icons">send</span>
+              </button>
             </div>
           </div>
-        </div>
-
-        <div class="input-container">
-          <input
-            v-model="userInput"
-            type="text"
-            placeholder="Ask a question..."
-            @keyup.enter="sendMessage"
-          />
-          <button class="btn-send" @click="sendMessage" :disabled="!userInput.trim()">
-            <span class="material-icons">send</span>
-          </button>
-        </div>
+        </Transition>
       </div>
-    </Transition>
-
-    <!-- Chat Toggle Button -->
-    <Transition name="fade">
-      <button v-if="!isOpen" class="assistant-toggle" @click="toggleChat" title="Ask AI Assistant">
-        <span class="material-icons">auto_awesome</span>
-      </button>
-    </Transition>
+    </Teleport>
   </div>
 </template>
 
@@ -201,99 +213,80 @@ export default defineComponent({
 </script>
 
 <style scoped>
-.ai-assistant-container {
-  position: fixed;
-  bottom: 24px;
-  right: 24px;
-  z-index: 1000;
-  /* Fixed width/height container to anchor children */
-  width: 350px;
-  height: 52px; /* Matches toggle height initially */
+.ai-assistant-wrapper {
   display: flex;
-  justify-content: flex-end;
-  align-items: flex-end;
-  pointer-events: none;
+  align-items: center;
 }
 
-.ai-assistant-container > * {
-  pointer-events: auto;
-}
-
-.assistant-toggle {
-  width: 52px;
-  height: 52px;
-  border-radius: 16px; /* Squircle style */
-  background: linear-gradient(135deg, #3b82f6 0%, #2563eb 100%);
-  border: none;
-  color: white;
+.nav-assistant-btn {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  background: rgba(59, 130, 246, 0.1);
+  border: 1px solid rgba(59, 130, 246, 0.2);
+  color: #60a5fa;
+  padding: 8px 16px;
+  border-radius: 12px;
   cursor: pointer;
+  transition: all 0.3s cubic-bezier(0.16, 1, 0.3, 1);
+  font-size: 0.85rem;
+  font-weight: 600;
+  position: relative;
+}
+
+.nav-assistant-btn:hover {
+  background: rgba(59, 130, 246, 0.15);
+  border-color: rgba(59, 130, 246, 0.4);
+  color: #fff;
+  transform: translateY(-1px);
+  box-shadow: 0 4px 12px rgba(59, 130, 246, 0.15);
+}
+
+.nav-assistant-btn.is-active {
+  background: #3b82f6;
+  color: #fff;
+  border-color: #3b82f6;
+  box-shadow: 0 4px 12px rgba(59, 130, 246, 0.3);
+}
+
+.nav-assistant-btn .material-icons {
+  font-size: 18px;
+}
+
+.icon-wrapper {
+  position: relative;
   display: flex;
   align-items: center;
   justify-content: center;
-  box-shadow:
-    0 8px 16px rgba(59, 130, 246, 0.2),
-    0 0 0 1px rgba(255, 255, 255, 0.1);
-  transition: all 0.4s cubic-bezier(0.4, 0, 0.2, 1);
-  position: absolute;
+}
+
+.ai-assistant-overlay {
+  position: fixed;
   bottom: 0;
-  right: 0;
-  overflow: visible;
-}
-
-.assistant-toggle:hover {
-  transform: translateY(-2px);
-  box-shadow:
-    0 12px 20px rgba(59, 130, 246, 0.3),
-    0 0 0 1px rgba(255, 255, 255, 0.2);
-}
-
-.assistant-toggle:active {
-  transform: translateY(0);
-}
-
-.notification-dot {
-  position: absolute;
-  top: -4px;
-  right: -4px;
-  width: 14px;
-  height: 14px;
-  background: #ef4444;
-  border: 3px solid #000;
-  border-radius: 50%;
-  animation: pulse 2s infinite;
-}
-
-@keyframes pulse {
-  0% {
-    transform: scale(1);
-    box-shadow: 0 0 0 0 rgba(239, 68, 68, 0.7);
-  }
-  70% {
-    transform: scale(1.1);
-    box-shadow: 0 0 0 10px rgba(239, 68, 68, 0);
-  }
-  100% {
-    transform: scale(1);
-    box-shadow: 0 0 0 0 rgba(239, 68, 68, 0);
-  }
+  left: 0;
+  width: 100vw;
+  height: 0;
+  z-index: 9999;
+  pointer-events: none;
 }
 
 .assistant-panel {
-  width: 350px;
-  height: 480px;
+  pointer-events: auto;
+  width: 380px;
+  height: 550px;
   max-width: calc(100vw - 48px);
-  max-height: calc(100vh - 120px);
-  background: rgba(18, 18, 18, 0.85); /* Glassmorphism */
+  max-height: calc(100vh - 100px);
+  background: rgba(18, 18, 18, 0.9); /* More opaque */
   border: 1px solid rgba(255, 255, 255, 0.1);
-  border-radius: 20px;
+  border-radius: 24px;
   display: flex;
   flex-direction: column;
   overflow: hidden;
-  box-shadow: 0 20px 50px rgba(0, 0, 0, 0.5);
-  backdrop-filter: blur(20px) saturate(180%);
+  box-shadow: 0 30px 60px rgba(0, 0, 0, 0.6);
+  backdrop-filter: blur(24px) saturate(180%);
   position: absolute;
-  bottom: 0;
-  right: 0;
+  bottom: 24px;
+  left: 24px;
   transition:
     width 0.4s cubic-bezier(0.16, 1, 0.3, 1),
     height 0.4s cubic-bezier(0.16, 1, 0.3, 1),
@@ -384,17 +377,6 @@ export default defineComponent({
   display: flex;
   flex-direction: column;
   gap: 16px;
-  scrollbar-width: thin;
-  scrollbar-color: rgba(255, 255, 255, 0.1) transparent;
-}
-
-.messages-container::-webkit-scrollbar {
-  width: 4px;
-}
-
-.messages-container::-webkit-scrollbar-thumb {
-  background: rgba(255, 255, 255, 0.1);
-  border-radius: 10px;
 }
 
 .message-wrapper {
@@ -579,7 +561,7 @@ export default defineComponent({
 }
 
 .assistant-panel {
-  transform-origin: bottom right;
+  transform-origin: bottom left;
 }
 
 .material-icons {

@@ -1,3 +1,5 @@
+import { API_BASE_URL } from 'src/config'
+
 /**
  * Learning Platform API Client
  *
@@ -5,7 +7,7 @@
  * Handles backend connectivity errors gracefully.
  */
 
-const API_BASE = 'http://localhost:3000'
+const API_BASE = API_BASE_URL
 
 /**
  * @typedef {Object} Concept
@@ -219,22 +221,6 @@ export async function getLessonById(lessonId, userId) {
  */
 export async function submit(request) {
   return apiRequest('/submit', {
-    method: 'POST',
-    body: JSON.stringify(request),
-  })
-}
-
-// =====================================================
-// COMPILATION ENDPOINTS
-// =====================================================
-
-/**
- * Compile and run code
- * @param {{ language: string, code: string }} request
- * @returns {Promise<CompileOutput>}
- */
-export async function compile(request) {
-  return apiRequest('/compile', {
     method: 'POST',
     body: JSON.stringify(request),
   })

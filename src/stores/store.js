@@ -1,5 +1,7 @@
 import { defineStore, acceptHMRUpdate } from 'pinia'
 import * as LearningAPI from '../services/LearningAPI'
+import { LANGUAGE_CONFIG, getMainFileName, getLanguageFromPath } from 'src/constants/languages'
+import { formatTime } from 'src/utils/formatters'
 
 // Fallback mock lesson for offline mode
 const FALLBACK_LESSON = {
@@ -195,11 +197,7 @@ export const useLessonStore = defineStore('lesson', {
     },
 
     formattedTotalTime(state) {
-      const seconds = state.progress?.totalTime / 1000 || 0
-      const h = Math.floor(seconds / 3600)
-      const m = Math.floor((seconds % 3600) / 60)
-      if (h > 0) return `${h}h ${m}m`
-      return `${m}m`
+      return formatTime(state.progress?.totalTime)
     },
 
     overallLevel(state) {
@@ -565,42 +563,6 @@ export const useLessonStore = defineStore('lesson', {
         console.error('Failed to load progress:', error)
       }
     },
-
-    // =====================================================
-    // COMPILATION
-    // =====================================================
-
-    async compileCode() {
-      this.isCompiling = true
-      this.attempts++
-
-      try {
-        // Use current language for compilation
-        const result = await LearningAPI.compile({
-          language: this.currentLanguage,
-          code: this.editorCode,
-        })
-
-        // Normalize result - 0 is always success across all languages
-        if (result.success === undefined) {
-          result.success = result.exitCode === 0
-        }
-
-        this.compileResult = result
-        return result
-      } catch (error) {
-        this.compileResult = {
-          success: false,
-          stdout: '',
-          stderr: error.message,
-          exitCode: 1,
-        }
-        return this.compileResult
-      } finally {
-        this.isCompiling = false
-      }
-    },
-
     // =====================================================
     // MASTERY & SUBMISSION
     // =====================================================
@@ -735,111 +697,50 @@ function extractCategoryFromConceptId(conceptId) {
 }
 
 /**
- * Language configuration for starter code and file detection
- */
-const LANGUAGE_CONFIG = {
-  rust: {
-    mainFile: 'src/main.rs',
-    extensions: ['.rs'],
-    defaultCode: 'fn main() {\n    // Start coding here\n}',
-    codeBlockId: 'rust',
-  },
-  python: {
-    mainFile: 'main.py',
-    extensions: ['.py'],
-    defaultCode:
-      '# Start coding here\n\ndef main():\n    pass\n\nif __name__ == "__main__":\n    main()',
-    codeBlockId: 'python',
-  },
-  javascript: {
-    mainFile: 'index.js',
-    extensions: ['.js', '.mjs'],
-    defaultCode: '// Start coding here\n\nfunction main() {\n    \n}\n\nmain();',
-    codeBlockId: 'javascript',
-  },
-  typescript: {
-    mainFile: 'index.ts',
-    extensions: ['.ts', '.tsx'],
-    defaultCode: '// Start coding here\n\nfunction main(): void {\n    \n}\n\nmain();',
-    codeBlockId: 'typescript',
-  },
-}
-
-/**
- * Get the main file name for a language
- * @param {string} language
- * @returns {string}
- */
-function getMainFileName(language) {
-  return LANGUAGE_CONFIG[language]?.mainFile || LANGUAGE_CONFIG.rust.mainFile
-}
-
-/**
- * Get the language from a file path
- * @param {string} filePath
- * @param {string} [fallbackLanguage='rust']
- * @returns {string}
- */
-function getLanguageFromPath(filePath, fallbackLanguage = 'rust') {
-  if (!filePath) return fallbackLanguage
-
-  for (const [lang, config] of Object.entries(LANGUAGE_CONFIG)) {
-    if (config.extensions.some((ext) => filePath.endsWith(ext))) {
-      return lang
-    }
-  }
-  return fallbackLanguage
-}
-
-/**
  * Find the main file from an array of starter files
  * @param {Array<{path: string, content: string}>} starterFiles
  * @param {string} language
  * @returns {{path: string, content: string}}
  */
 function findMainFile(starterFiles, language) {
-  const config = LANGUAGE_CONFIG[language] || LANGUAGE_CONFIG.rust
+  // Use shared logic for main file detection
+  const mainName = getMainFileName(language)
+  const exactMsg = starterFiles.find((f) => f.path === mainName)
+  if (exactMsg) return exactMsg
 
-  // First try to find exact match for main file
-  const exactMatch = starterFiles.find((f) => f.path.endsWith(config.mainFile))
-  if (exactMatch) return exactMatch
+  // Fallback: first file that matches language extension
+  const langConfig = LANGUAGE_CONFIG[language]
+  if (langConfig) {
+    const byExt = starterFiles.find((f) =>
+      langConfig.extensions.some((ext) => f.path.endsWith(ext)),
+    )
+    if (byExt) return byExt
+  }
 
-  // Then try to find any file with the right extension
-  const extMatch = starterFiles.find((f) => config.extensions.some((ext) => f.path.endsWith(ext)))
-  if (extMatch) return extMatch
-
-  // Fallback to first file
+  // Final fallback: first file
   return starterFiles[0]
 }
 
 /**
- * Extract starter code from lesson markdown
- * Looks for code blocks with the appropriate language tag
+ * Extract starter code from markdown content
+ * Looks for specific code blocks defined in language config
  * @param {string} markdown
- * @param {string} [language='rust']
+ * @param {string} language
  * @returns {string}
  */
-function extractStarterCode(markdown, language = 'rust') {
+function extractStarterCode(markdown, language) {
+  if (!markdown) return ''
+
   const config = LANGUAGE_CONFIG[language] || LANGUAGE_CONFIG.rust
-  const langTag = config.codeBlockId
+  const codeBlockId = config.codeBlockId
 
-  if (!markdown) return config.defaultCode
+  // Try to find a code block with the language identifier
+  // Regex looks for ```rust ... ``` blocks
+  const regex = new RegExp(`\`\`\`${codeBlockId}.*?\\n([\\s\\S]*?)\`\`\``)
+  const match = markdown.match(regex)
 
-  // Look for "Starting Code" section with the specific language
-  const startingRegex = new RegExp(
-    `\\*\\*Starting Code:\\*\\*\\s*\\n\`\`\`${langTag}\\s*\\n([\\s\\S]*?)\\n\`\`\``,
-    'i',
-  )
-  const startingMatch = markdown.match(startingRegex)
-  if (startingMatch?.[1]) {
-    return startingMatch[1].trim()
-  }
-
-  // Fallback: find the first code block with the language tag
-  const codeRegex = new RegExp(`\`\`\`${langTag}\\s*\\n([\\s\\S]*?)\\n\`\`\``)
-  const codeMatch = markdown.match(codeRegex)
-  if (codeMatch?.[1]) {
-    return codeMatch[1].trim()
+  if (match && match[1]) {
+    return match[1].trim()
   }
 
   return config.defaultCode

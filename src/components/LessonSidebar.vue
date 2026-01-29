@@ -58,6 +58,7 @@
     <KnowledgeGraphModal
       :isOpen="showGraphModal"
       :userId="userId"
+      :language="currentLanguage"
       @close="showGraphModal = false"
       @node-click="handleNodeClick"
     />
@@ -85,7 +86,7 @@ export default defineComponent({
   emits: ['close'],
   setup(props, { emit }) {
     const lessonStore = useLessonStore()
-    const { lessons, currentLessonId, userId } = storeToRefs(lessonStore)
+    const { lessons, currentLessonId, userId, currentLanguage } = storeToRefs(lessonStore)
     const { loadLesson } = lessonStore
 
     const showGraphModal = ref(false)
@@ -97,7 +98,7 @@ export default defineComponent({
         // Navigate to the lesson route, which will trigger loading via the page watcher
         router.push({
           name: 'learn',
-          params: { language: lessonStore.currentLanguage, lessonId: lesson.lessonId },
+          params: { language: currentLanguage.value, lessonId: lesson.lessonId },
         })
 
         // On mobile/narrow screens, we might want to close the sidebar
@@ -117,6 +118,7 @@ export default defineComponent({
       lessons,
       currentLessonId,
       userId,
+      currentLanguage,
       selectLesson,
       showGraphModal,
       handleNodeClick,

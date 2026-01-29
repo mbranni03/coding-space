@@ -18,7 +18,7 @@
         <div class="row q-gutter-md">
           <div class="metric-card glass-panel row items-center q-px-md q-py-sm">
             <div class="level-bars q-mr-md">
-              <div v-for="i in 4" :key="i" class="bar" :class="{ active: i <= overallLevel }"></div>
+              <LevelBars :level="overallLevel" />
             </div>
             <div>
               <div class="text-caption text-grey-5 text-uppercase">Level</div>
@@ -64,12 +64,7 @@
                 >
                   <div class="row items-center">
                     <div class="level-bars level-bars-mini q-mr-sm">
-                      <div
-                        v-for="i in 4"
-                        :key="i"
-                        class="bar"
-                        :class="{ active: i <= (progress.languages[lang.id].overallLevel || 0) }"
-                      ></div>
+                      <LevelBars :level="progress.languages[lang.id].overallLevel || 0" mini />
                     </div>
                     <div class="text-caption text-grey-5 font-outfit text-weight-bold">
                       LVL {{ progress.languages[lang.id].overallLevel || 1 }}
@@ -128,9 +123,14 @@ import { defineComponent, computed, onMounted } from 'vue'
 import { useRouter, useRoute } from 'vue-router'
 import { useLessonStore } from 'stores/store'
 import { storeToRefs } from 'pinia'
+import LevelBars from 'components/LevelBars.vue'
+import { formatTime } from 'src/utils/formatters'
 
 export default defineComponent({
   name: 'IndexPage',
+  components: {
+    LevelBars,
+  },
   setup() {
     const router = useRouter()
     const route = useRoute()
@@ -152,14 +152,6 @@ export default defineComponent({
         selectLanguage({ id: route.params.language })
       }
     })
-
-    const formatTime = (ms) => {
-      const seconds = ms / 1000 || 0
-      const h = Math.floor(seconds / 3600)
-      const m = Math.floor((seconds % 3600) / 60)
-      if (h > 0) return `${h}h ${m}m`
-      return `${m}m`
-    }
 
     return {
       store,

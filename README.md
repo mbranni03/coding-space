@@ -50,7 +50,9 @@ Traditional tutorials often leave students in the "tutorial hell" — where they
 
 ---
 
-## Installation
+## Setup Guide
+
+CodingSpace is a UI built on top of another project of mine, [FraudeCode](https://github.com/mbranni03/fraudecode). FraudeCode is a bun cli tool that has a `plugin` feature that includes a learning plugin that is used to power this experience.
 
 1. **Install dependencies**
 

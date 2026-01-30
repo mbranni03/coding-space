@@ -598,6 +598,28 @@ export const useLessonStore = defineStore('lesson', {
         // Always refresh progress after submission to get updated totalTime and overallLevel
         await this.loadProgress()
 
+        const lessonIdx = this.generatedLessons.findIndex(
+          (l) => l.lessonId === this.currentLessonId,
+        )
+        if (lessonIdx !== -1) {
+          const lesson = this.generatedLessons[lessonIdx]
+          // Ensure verificationTask structure exists
+          if (!lesson.verificationTask) lesson.verificationTask = {}
+          if (!lesson.verificationTask.starterFiles) lesson.verificationTask.starterFiles = []
+
+          const starterFiles = lesson.verificationTask.starterFiles
+          if (starterFiles.length > 0) {
+            const mainFile = findMainFile(starterFiles, this.currentLanguage)
+            if (mainFile) mainFile.content = code
+          } else {
+            // If no starter files, create one with the submitted code
+            starterFiles.push({
+              path: getMainFileName(this.currentLanguage),
+              content: code,
+            })
+          }
+        }
+
         return response
       } catch (error) {
         console.error('Submission failed:', error)

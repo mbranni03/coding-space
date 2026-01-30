@@ -151,6 +151,14 @@
               >
             </div>
 
+            <div
+              v-if="interactiveOutput.length === 0 && interactiveStatus === 'running'"
+              class="terminal-placeholder"
+            >
+              <span class="material-icons placeholder-icon rotating">hourglass_empty</span>
+              <p>Running Code...</p>
+            </div>
+
             <div v-for="(line, i) in interactiveOutput" :key="i" :class="['term-line', line.type]">
               <span v-if="line.type === 'stdin'" class="prompt-char">$ </span>
               <span class="line-content">{{ line.data }}</span>
@@ -178,17 +186,11 @@
         </div>
 
         <!-- Sticky Footer Hint outside scroll area -->
-        <div v-if="delayedRunning" class="terminal-footer-hint">
+        <div v-if="interactiveStatus === 'running'" class="terminal-footer-hint">
           <span class="material-icons">info</span>
           <span>Program is running... Provide input or wait for completion.</span>
         </div>
       </template>
-
-      <!-- Processing state -->
-      <div v-if="!submission && !showOutput" class="terminal-placeholder">
-        <span class="material-icons placeholder-icon rotating">hourglass_empty</span>
-        <p>Processing...</p>
-      </div>
     </div>
   </div>
 </template>
@@ -239,18 +241,32 @@ export default defineComponent({
     const delayedRunning = ref(false)
     let runningTimeout = null
 
+    const hasStdOut = computed(() => props.interactiveOutput.some((line) => line.type === 'stdout'))
+
     watch(
-      () => props.interactiveStatus,
-      (status) => {
-        if (status === 'running') {
-          runningTimeout = setTimeout(() => {
-            delayedRunning.value = true
-          }, 400)
-        } else {
+      [() => props.interactiveStatus, hasStdOut],
+      ([status, hasOutput]) => {
+        if (status !== 'running') {
           if (runningTimeout) {
             clearTimeout(runningTimeout)
             runningTimeout = null
           }
+          delayedRunning.value = false
+          return
+        }
+
+        if (hasOutput) {
+          if (delayedRunning.value) return
+
+          if (!runningTimeout) {
+            runningTimeout = setTimeout(() => {
+              if (props.interactiveStatus === 'running') {
+                delayedRunning.value = true
+              }
+              runningTimeout = null
+            }, 50)
+          }
+        } else {
           delayedRunning.value = false
         }
       },

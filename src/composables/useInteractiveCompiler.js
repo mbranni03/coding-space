@@ -109,6 +109,12 @@ export function useInteractiveCompiler(apiBase = 'ws://localhost:3000') {
     status.value = 'exited'
   }
 
+  const clear = () => {
+    output.value = []
+    status.value = 'idle'
+    exitCode.value = null
+  }
+
   // Cleanup on unmount
   onUnmounted(() => {
     if (socket.value) {
@@ -120,6 +126,7 @@ export function useInteractiveCompiler(apiBase = 'ws://localhost:3000') {
     runCode,
     sendInput,
     kill,
+    clear,
     output,
     status,
     exitCode,

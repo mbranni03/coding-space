@@ -125,6 +125,7 @@
         :exit-code="exitCode"
         :submission="lastSubmission"
         @input="handleInput"
+        @clear="clearTerminal"
         @next-lesson="handleNextLesson"
       />
     </div>
@@ -184,6 +185,7 @@ export default defineComponent({
       runCode: runInteractive,
       sendInput,
       kill,
+      clear: clearTerminal,
       output: interactiveOutput,
       status: interactiveStatus,
       exitCode,
@@ -332,6 +334,7 @@ export default defineComponent({
       consoleExpanded.value = false
       hasCompiledSuccessfully.value = false
       if (interactiveStatus.value === 'running') kill()
+      clearTerminal()
 
       if (newLesson?.files) {
         const mainName = getMainFileName(currentLanguage.value)
@@ -410,6 +413,7 @@ export default defineComponent({
       runCode,
       submitWork,
       handleInput, // for terminal
+      clearTerminal,
       handleNextLesson,
       retryLoad,
 

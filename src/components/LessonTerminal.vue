@@ -232,7 +232,7 @@ export default defineComponent({
       default: 0,
     },
   },
-  emits: ['update:expanded', 'input', 'next-lesson'],
+  emits: ['update:expanded', 'input', 'next-lesson', 'clear'],
   setup(props, { emit }) {
     const consoleScrollRef = ref(null)
     const inputValue = ref('')
@@ -280,9 +280,7 @@ export default defineComponent({
     }
 
     const clearOutputLocal = () => {
-      // Note: This only clears local visual state if the parent doesn't reset props.
-      // Ideally parent should handle clearing the actual data.
-      console.log('Clear output requested')
+      emit('clear')
     }
 
     const copyOutput = () => {
